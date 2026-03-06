@@ -134,6 +134,7 @@ func (m AppModel) updateSetup(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.client = c
 		m.cfg.GitLab.Host = m.setup.Host()
+		m.cfg.GitLab.Token = m.setup.Token()
 		_ = config.Save(m.cfgPath, m.cfg)
 
 		m.screen = ScreenRepoPicker

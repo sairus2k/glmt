@@ -53,7 +53,8 @@ func TestSaveAndLoad(t *testing.T) {
 
 	original := &Config{
 		GitLab: GitLabConfig{
-			Host: "gitlab.example.com",
+			Host:  "gitlab.example.com",
+			Token: "glpat-xxxxxxxxxxxxxxxxxxxx",
 		},
 		Defaults: DefaultsConfig{
 			Repo:      "myteam/myrepo",
@@ -77,6 +78,9 @@ func TestSaveAndLoad(t *testing.T) {
 
 	if loaded.GitLab.Host != original.GitLab.Host {
 		t.Errorf("Host = %q, want %q", loaded.GitLab.Host, original.GitLab.Host)
+	}
+	if loaded.GitLab.Token != original.GitLab.Token {
+		t.Errorf("Token = %q, want %q", loaded.GitLab.Token, original.GitLab.Token)
 	}
 	if loaded.Defaults.Repo != original.Defaults.Repo {
 		t.Errorf("Repo = %q, want %q", loaded.Defaults.Repo, original.Defaults.Repo)

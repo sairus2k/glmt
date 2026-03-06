@@ -16,7 +16,8 @@ type Config struct {
 
 // GitLabConfig holds GitLab connection settings.
 type GitLabConfig struct {
-	Host string `toml:"host"`
+	Host  string `toml:"host"`
+	Token string `toml:"token"`
 }
 
 // DefaultsConfig holds default project settings.

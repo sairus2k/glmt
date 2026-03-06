@@ -39,6 +39,20 @@ func run() error {
 }
 
 func runNonInteractive(host, token string, projectID int, mrsFlag string) error {
+	// Fall back to saved config for host/token if not provided via flags
+	if host == "" || token == "" {
+		cfgPath := configPath()
+		cfg, err := config.Load(cfgPath)
+		if err == nil {
+			if host == "" {
+				host = cfg.GitLab.Host
+			}
+			if token == "" {
+				token = cfg.GitLab.Token
+			}
+		}
+	}
+
 	// Validate required flags
 	var missing []string
 	if host == "" {
@@ -137,21 +151,35 @@ func runNonInteractive(host, token string, projectID int, mrsFlag string) error 
 	return nil
 }
 
+// configPath returns the config file path, respecting the GLMT_CONFIG env var.
+func configPath() string {
+	if p := os.Getenv("GLMT_CONFIG"); p != "" {
+		return p
+	}
+	return config.DefaultPath()
+}
+
 func runTUI() error {
 	// Load config
-	cfgPath := config.DefaultPath()
+	cfgPath := configPath()
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Try to read existing glab credentials
+	// Try to read existing credentials: glab config first, then glmt config
 	var creds *auth.Credentials
 	glabDir := auth.DefaultConfigDir()
 	host := cfg.GitLab.Host
 	c, err := auth.ReadCredentials(glabDir, host)
 	if err == nil {
 		creds = c
+	} else if cfg.GitLab.Host != "" && cfg.GitLab.Token != "" {
+		creds = &auth.Credentials{
+			Host:     cfg.GitLab.Host,
+			Token:    cfg.GitLab.Token,
+			Protocol: "https",
+		}
 	}
 
 	// Start TUI
