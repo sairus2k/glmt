@@ -59,7 +59,6 @@ func NewAppModel(creds *auth.Credentials, cfg *config.Config, cfgPath string) Ap
 			if err != nil {
 				return "", err
 			}
-			m.client = c
 			return user.Name, nil
 		}
 		m.setup = sm
@@ -128,7 +127,12 @@ func (m AppModel) updateSetup(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.setup = newSetup.(SetupModel)
 
 	if m.setup.State() == SetupStateSuccess {
-		// Credentials validated, move to repo picker
+		// Credentials validated — create the client and move to repo picker
+		c, err := gitlab.NewAPIClient(m.setup.Host(), m.setup.Token())
+		if err != nil {
+			return m, nil
+		}
+		m.client = c
 		m.cfg.GitLab.Host = m.setup.Host()
 		_ = config.Save(m.cfgPath, m.cfg)
 

@@ -3,9 +3,11 @@ package tui
 import (
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/emdash-ai/glmt/internal/auth"
 	"github.com/emdash-ai/glmt/internal/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestExtractProjectPath_SSH(t *testing.T) {
@@ -49,4 +51,26 @@ func TestApp_StartsAtRepoPickerWhenNoProject(t *testing.T) {
 
 	m := NewAppModel(creds, cfg, "/tmp/test-config.toml")
 	assert.Equal(t, ScreenRepoPicker, m.screen)
+}
+
+func TestApp_SetupSuccessTransitionsToRepoPicker(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfgPath := t.TempDir() + "/config.toml"
+	m := NewAppModel(nil, cfg, cfgPath)
+	require.Equal(t, ScreenSetup, m.screen)
+
+	// Type host and token to populate the setup model
+	var model tea.Model = m
+	model = typeString(t, model, "gitlab.example.com")
+	model, _ = model.Update(specialKeyPress(tea.KeyEnter))
+	model = typeString(t, model, "glpat-test-token")
+
+	// Simulate credential validation success
+	model, cmd := model.Update(credentialsValidMsg{userName: "Test User"})
+	app := model.(AppModel)
+
+	assert.Equal(t, ScreenRepoPicker, app.screen)
+	assert.NotNil(t, app.client, "client must be set after setup success")
+	assert.Equal(t, "gitlab.example.com", app.cfg.GitLab.Host)
+	require.NotNil(t, cmd, "should return fetchProjects command")
 }
