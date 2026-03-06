@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -45,10 +46,11 @@ func ReadCredentials(configDir string, host string) (*Credentials, error) {
 	}
 
 	if host != "" {
+		cleanedHost := cleanHost(host)
 		for _, entry := range hosts {
-			if entry.host == host {
+			if cleanHost(entry.host) == cleanedHost {
 				return &Credentials{
-					Host:     host,
+					Host:     cleanedHost,
 					Token:    entry.config.Token,
 					Protocol: protocolOrDefault(entry.config.APIProtocol),
 				}, nil
@@ -62,7 +64,7 @@ func ReadCredentials(configDir string, host string) (*Credentials, error) {
 	first := hosts[0]
 
 	return &Credentials{
-		Host:     first.host,
+		Host:     cleanHost(first.host),
 		Token:    first.config.Token,
 		Protocol: protocolOrDefault(first.config.APIProtocol),
 	}, nil
@@ -139,4 +141,14 @@ func protocolOrDefault(protocol string) string {
 	}
 
 	return protocol
+}
+
+// cleanHost strips any scheme prefix from a hostname.
+// glab sometimes stores hosts as "https//gitlab.example.com" or "https://gitlab.example.com".
+func cleanHost(host string) string {
+	host = strings.TrimPrefix(host, "https://")
+	host = strings.TrimPrefix(host, "http://")
+	host = strings.TrimPrefix(host, "https//")
+	host = strings.TrimPrefix(host, "http//")
+	return host
 }

@@ -112,6 +112,37 @@ func TestReadCredentials_EmptyHosts(t *testing.T) {
 	}
 }
 
+func TestReadCredentials_HostWithSchemePrefix(t *testing.T) {
+	content := `hosts:
+  https//gitlab.myeasyfarm.com:
+    token: glpat-abc123
+    api_protocol: https
+`
+	configDir := setupConfigDirWithContent(t, content)
+
+	// Look up by clean hostname — should match the prefixed key
+	creds, err := ReadCredentials(configDir, "gitlab.myeasyfarm.com")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if creds.Host != "gitlab.myeasyfarm.com" {
+		t.Errorf("got host %q, want %q", creds.Host, "gitlab.myeasyfarm.com")
+	}
+	if creds.Token != "glpat-abc123" {
+		t.Errorf("got token %q, want %q", creds.Token, "glpat-abc123")
+	}
+
+	// Look up with no host — first entry should also be cleaned
+	creds2, err := ReadCredentials(configDir, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if creds2.Host != "gitlab.myeasyfarm.com" {
+		t.Errorf("default host: got %q, want %q", creds2.Host, "gitlab.myeasyfarm.com")
+	}
+}
+
 // setupConfigDir copies a fixture file into a temp directory as config.yml.
 func setupConfigDir(t *testing.T, fixturePath string) string {
 	t.Helper()
