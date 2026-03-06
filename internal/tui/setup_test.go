@@ -175,10 +175,27 @@ func TestSetup_EscapeGoesBack(t *testing.T) {
 
 func TestSetup_EscapeInHostState(t *testing.T) {
 	var m tea.Model = NewSetupModel()
-	m, _ = m.Update(specialKeyPress(tea.KeyEscape))
+	m, cmd := m.Update(specialKeyPress(tea.KeyEscape))
 
 	sm := asSetup(t, m)
 	assert.Equal(t, SetupStateHost, sm.State())
+	require.NotNil(t, cmd, "esc in host state should quit")
+}
+
+func TestSetup_CtrlCQuitsAnyState(t *testing.T) {
+	ctrlC := tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl})
+
+	// Host state
+	var m tea.Model = NewSetupModel()
+	_, cmd := m.Update(ctrlC)
+	require.NotNil(t, cmd, "ctrl+c in host state should quit")
+
+	// Token state
+	m = NewSetupModel()
+	m = typeString(t, m, "gitlab.example.com")
+	m, _ = m.Update(specialKeyPress(tea.KeyEnter))
+	_, cmd = m.Update(ctrlC)
+	require.NotNil(t, cmd, "ctrl+c in token state should quit")
 }
 
 func TestSetup_ViewShowsAsterisks(t *testing.T) {

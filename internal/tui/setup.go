@@ -76,6 +76,10 @@ func (m SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m SetupModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
+	if key == "ctrl+c" {
+		return m, tea.Quit
+	}
+
 	switch m.state {
 	case SetupStateHost:
 		return m.handleHostInput(msg, key)
@@ -108,7 +112,7 @@ func (m SetupModel) handleHostInput(msg tea.KeyPressMsg, key string) (tea.Model,
 		}
 		return m, nil
 	case "esc":
-		return m, nil
+		return m, tea.Quit
 	default:
 		text := msg.Key().Text
 		if text != "" {
@@ -176,7 +180,7 @@ func (m SetupModel) View() tea.View {
 		b.WriteString("  GitLab host: ")
 		b.WriteString(m.host)
 		b.WriteString("_\n")
-		b.WriteString("\n  Press Enter to continue.\n")
+		b.WriteString("\n  Press Enter to continue. Press Escape to quit.\n")
 	case SetupStateToken:
 		b.WriteString("  GitLab host: ")
 		b.WriteString(m.host)
