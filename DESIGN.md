@@ -107,7 +107,7 @@ Shown on first run only (or when explicitly triggered from the MR list screen).
 
 ### 3. MR list + selection
 
-All open, non-draft MRs for the selected repo, split into two groups:
+All open MRs for the selected repo, split into two groups:
 
 **Selectable** (all conditions met):
 - Not a draft
@@ -217,6 +217,7 @@ For each MR in FIFO (oldest-first) order:
 4. CANCEL MAIN PIPELINE (if more MRs remain in the train)
    GET /projects/:id/pipelines?ref=main&status=running&order_by=id&sort=desc
    Take the most recently created one → POST .../cancel
+   Remember the cancelled pipeline ID for possible restart in step 6.
    This prevents wasteful CI runs on intermediate main states.
 
 5. If this was the LAST MR in the train AND it merged successfully:
@@ -224,14 +225,18 @@ For each MR in FIFO (oldest-first) order:
    Do NOT cancel — let the final main pipeline run naturally.
 
 6. If this was the LAST MR in the train AND it was SKIPPED (own pipeline failed):
-   The main pipeline was cancelled after the previous MR merged and was never
-   restarted. Trigger a new main pipeline explicitly:
-   POST /projects/:id/pipeline { ref: "main" }
-   Log: "Last MR skipped — triggered new main pipeline: <url>"
+   a. If at least one prior MR was merged (a main pipeline was cancelled in
+      step 4): restart the cancelled pipeline:
+      POST /projects/:id/pipelines/:cancelled_pipeline_id/retry
+      Log: "Last MR skipped — restarted main pipeline: <url>"
+   b. If NO MR was merged in this train run (all skipped): do nothing —
+      no main state changed, no pipeline was cancelled. Skip to step 7.
 
-7. WAIT FOR MAIN PIPELINE (always, after the train is otherwise complete)
+7. WAIT FOR MAIN PIPELINE (only if at least one MR was merged or a pipeline
+   was restarted in step 6)
    Whether the main pipeline was left running naturally (last MR merged) or
-   triggered explicitly (last MR skipped), poll and display its live status:
+   restarted (last MR skipped after a prior merge), poll and display its
+   live status:
    GET /projects/:id/pipelines?ref=main&order_by=id&sort=desc (take first result)
    Poll every 10s until status is terminal (success / failed / canceled).
    Show in the train run log:
@@ -239,6 +244,8 @@ For each MR in FIFO (oldest-first) order:
    └─ ✓ Main pipeline passed   (5m 02s)
    or
    └─ ✗ Main pipeline failed   (4m 44s)  <url>
+   If all MRs were skipped, skip this step and show:
+   "All MRs skipped — nothing to merge."
 ```
 
 **Polling intervals**:
@@ -314,7 +321,7 @@ Key scenarios to cover:
 - `GetMR` — pipeline status variants, `blocking_discussions_resolved`
 - `MergeMR` — success, 409 SHA mismatch, 405 not mergeable
 - `CancelPipeline` — success, already cancelled (idempotent)
-- `TriggerPipeline` — success
+- `RetryPipeline` — success (restart a cancelled pipeline)
 - `GetLatestPipeline` — running, success, failed
 
 ```
@@ -340,15 +347,15 @@ Scenarios to cover as table-driven tests:
 |---|---|
 | All MRs succeed | All merged, main pipeline awaited |
 | MR #2 pipeline fails | #2 skipped, #3 proceeds, main pipeline awaited |
-| Last MR skipped | New main pipeline triggered, then awaited |
+| Last MR skipped (prior MR merged) | Cancelled main pipeline restarted, then awaited |
 | SHA mismatch on merge | Rebase retried once, then merged |
 | SHA mismatch twice | MR skipped |
 | Rebase conflict | MR skipped, continue |
-| Only one MR, it skips | No prior merge → no main pipeline cancelled → no new trigger |
+| All MRs skipped | No merges → no cancelled pipeline → nothing to restart or await |
 | Train aborted by user | Current MR not rolled back, already-merged stay merged |
 
 Assert on: sequence of calls made to the mock client, final `TrainResult`
-struct (per-MR status, skip reasons), whether `TriggerPipeline` was called.
+struct (per-MR status, skip reasons), whether `RetryPipeline` was called.
 
 ```
 internal/train/

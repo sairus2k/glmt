@@ -1,0 +1,348 @@
+package gitlab
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// newTestClient creates an APIClient pointing at the given test server.
+func newTestClient(t *testing.T, server *httptest.Server) *APIClient {
+	t.Helper()
+	client, err := NewAPIClient(server.URL, "test-token")
+	require.NoError(t, err)
+	return client
+}
+
+func TestListMergeRequests(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v4/projects/1/merge_requests", r.URL.Path)
+		assert.Equal(t, "opened", r.URL.Query().Get("state"))
+		assert.Equal(t, "created_at", r.URL.Query().Get("order_by"))
+		assert.Equal(t, "asc", r.URL.Query().Get("sort"))
+
+		w.Header().Set("Content-Type", "application/json")
+		resp := `[
+			{
+				"iid": 10,
+				"title": "Add feature X",
+				"author": {"username": "alice"},
+				"source_branch": "feature-x",
+				"target_branch": "main",
+				"sha": "abc123",
+				"created_at": "2025-01-15T10:00:00Z",
+				"draft": false,
+				"head_pipeline": {"id": 100, "status": "success", "ref": "feature-x", "sha": "abc123", "web_url": "https://gitlab.com/pipeline/100"},
+				"detailed_merge_status": "mergeable",
+				"blocking_discussions_resolved": true,
+				"web_url": "https://gitlab.com/mr/10"
+			},
+			{
+				"iid": 11,
+				"title": "Fix bug Y",
+				"author": {"username": "bob"},
+				"source_branch": "fix-y",
+				"target_branch": "main",
+				"sha": "def456",
+				"created_at": "2025-01-16T12:00:00Z",
+				"draft": true,
+				"head_pipeline": null,
+				"detailed_merge_status": "checking",
+				"blocking_discussions_resolved": false,
+				"web_url": "https://gitlab.com/mr/11"
+			}
+		]`
+		_, _ = fmt.Fprint(w, resp)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	mrs, err := client.ListMergeRequests(context.Background(), 1)
+	require.NoError(t, err)
+	require.Len(t, mrs, 2)
+
+	assert.Equal(t, 10, mrs[0].IID)
+	assert.Equal(t, "Add feature X", mrs[0].Title)
+	assert.Equal(t, "alice", mrs[0].Author)
+	assert.Equal(t, "feature-x", mrs[0].SourceBranch)
+	assert.Equal(t, "main", mrs[0].TargetBranch)
+	assert.Equal(t, "abc123", mrs[0].SHA)
+	assert.False(t, mrs[0].Draft)
+	assert.Equal(t, "", mrs[0].HeadPipelineStatus) // BasicMergeRequest doesn't include HeadPipeline
+	assert.Equal(t, "mergeable", mrs[0].DetailedMergeStatus)
+	assert.True(t, mrs[0].BlockingDiscussionsResolved)
+	assert.Equal(t, "https://gitlab.com/mr/10", mrs[0].WebURL)
+
+	assert.Equal(t, 11, mrs[1].IID)
+	assert.Equal(t, "bob", mrs[1].Author)
+	assert.True(t, mrs[1].Draft)
+	assert.Equal(t, "", mrs[1].HeadPipelineStatus)
+}
+
+func TestGetMergeRequest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v4/projects/1/merge_requests/10", r.URL.Path)
+
+		w.Header().Set("Content-Type", "application/json")
+		resp := `{
+			"iid": 10,
+			"title": "Add feature X",
+			"author": {"username": "alice"},
+			"source_branch": "feature-x",
+			"target_branch": "main",
+			"sha": "abc123",
+			"created_at": "2025-01-15T10:00:00Z",
+			"draft": false,
+			"head_pipeline": {"id": 100, "status": "success", "ref": "feature-x", "sha": "abc123", "web_url": "https://gitlab.com/pipeline/100"},
+			"detailed_merge_status": "mergeable",
+			"blocking_discussions_resolved": true,
+			"web_url": "https://gitlab.com/mr/10"
+		}`
+		_, _ = fmt.Fprint(w, resp)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	mr, err := client.GetMergeRequest(context.Background(), 1, 10)
+	require.NoError(t, err)
+
+	assert.Equal(t, 10, mr.IID)
+	assert.Equal(t, "Add feature X", mr.Title)
+	assert.Equal(t, "alice", mr.Author)
+	assert.Equal(t, "feature-x", mr.SourceBranch)
+	assert.Equal(t, "main", mr.TargetBranch)
+	assert.Equal(t, "abc123", mr.SHA)
+	assert.False(t, mr.Draft)
+	assert.Equal(t, "success", mr.HeadPipelineStatus)
+	assert.Equal(t, "mergeable", mr.DetailedMergeStatus)
+	assert.True(t, mr.BlockingDiscussionsResolved)
+	assert.Equal(t, "https://gitlab.com/mr/10", mr.WebURL)
+}
+
+func TestRebaseMergeRequest_Success(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v4/projects/1/merge_requests/10/rebase":
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = fmt.Fprint(w, `{"rebase_in_progress": true}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/1/merge_requests/10":
+			callCount++
+			w.Header().Set("Content-Type", "application/json")
+			if callCount == 1 {
+				_, _ = fmt.Fprint(w, `{
+					"iid": 10, "title": "MR", "source_branch": "b", "target_branch": "main",
+					"sha": "abc", "rebase_in_progress": true, "merge_error": ""
+				}`)
+			} else {
+				_, _ = fmt.Fprint(w, `{
+					"iid": 10, "title": "MR", "source_branch": "b", "target_branch": "main",
+					"sha": "abc", "rebase_in_progress": false, "merge_error": ""
+				}`)
+			}
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	err := client.RebaseMergeRequest(context.Background(), 1, 10)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, callCount, 2)
+}
+
+func TestRebaseMergeRequest_Conflict(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v4/projects/1/merge_requests/10/rebase":
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = fmt.Fprint(w, `{"rebase_in_progress": true}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/1/merge_requests/10":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprint(w, `{
+				"iid": 10, "title": "MR", "source_branch": "b", "target_branch": "main",
+				"sha": "abc", "rebase_in_progress": false,
+				"merge_error": "Rebase failed: conflict in file.txt"
+			}`)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	err := client.RebaseMergeRequest(context.Background(), 1, 10)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "conflict")
+}
+
+func TestMergeMergeRequest_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPut, r.Method)
+		assert.Equal(t, "/api/v4/projects/1/merge_requests/10/merge", r.URL.Path)
+
+		var body map[string]interface{}
+		err := json.NewDecoder(r.Body).Decode(&body)
+		require.NoError(t, err)
+		assert.Equal(t, "abc123", body["sha"])
+		assert.Equal(t, true, body["should_remove_source_branch"])
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{
+			"iid": 10, "title": "MR", "state": "merged",
+			"source_branch": "b", "target_branch": "main", "sha": "abc123"
+		}`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	err := client.MergeMergeRequest(context.Background(), 1, 10, "abc123")
+	require.NoError(t, err)
+}
+
+func TestMergeMergeRequest_SHAMismatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = fmt.Fprint(w, `{"message": "SHA does not match"}`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	err := client.MergeMergeRequest(context.Background(), 1, 10, "wrong-sha")
+	require.Error(t, err)
+}
+
+func TestGetMergeRequestPipeline(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v4/projects/1/merge_requests/10", r.URL.Path)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{
+			"iid": 10, "title": "MR", "source_branch": "b", "target_branch": "main", "sha": "abc",
+			"head_pipeline": {
+				"id": 200, "status": "running", "ref": "feature-x",
+				"sha": "abc123", "web_url": "https://gitlab.com/pipeline/200"
+			}
+		}`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	pipeline, err := client.GetMergeRequestPipeline(context.Background(), 1, 10)
+	require.NoError(t, err)
+	require.NotNil(t, pipeline)
+
+	assert.Equal(t, 200, pipeline.ID)
+	assert.Equal(t, "running", pipeline.Status)
+	assert.Equal(t, "feature-x", pipeline.Ref)
+	assert.Equal(t, "abc123", pipeline.SHA)
+	assert.Equal(t, "https://gitlab.com/pipeline/200", pipeline.WebURL)
+}
+
+func TestListPipelines(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v4/projects/1/pipelines", r.URL.Path)
+		assert.Equal(t, "main", r.URL.Query().Get("ref"))
+		assert.Equal(t, "id", r.URL.Query().Get("order_by"))
+		assert.Equal(t, "desc", r.URL.Query().Get("sort"))
+
+		w.Header().Set("Content-Type", "application/json")
+		resp := `[
+			{
+				"id": 300, "status": "success", "ref": "main",
+				"sha": "aaa111", "web_url": "https://gitlab.com/pipeline/300"
+			},
+			{
+				"id": 299, "status": "failed", "ref": "main",
+				"sha": "bbb222", "web_url": "https://gitlab.com/pipeline/299"
+			}
+		]`
+		_, _ = fmt.Fprint(w, resp)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	pipelines, err := client.ListPipelines(context.Background(), 1, "main", "")
+	require.NoError(t, err)
+	require.Len(t, pipelines, 2)
+
+	assert.Equal(t, 300, pipelines[0].ID)
+	assert.Equal(t, "success", pipelines[0].Status)
+	assert.Equal(t, "main", pipelines[0].Ref)
+	assert.Equal(t, "aaa111", pipelines[0].SHA)
+
+	assert.Equal(t, 299, pipelines[1].ID)
+	assert.Equal(t, "failed", pipelines[1].Status)
+}
+
+func TestCancelPipeline(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/v4/projects/1/pipelines/300/cancel", r.URL.Path)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"id": 300, "status": "canceled", "ref": "main", "sha": "aaa111"}`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	err := client.CancelPipeline(context.Background(), 1, 300)
+	require.NoError(t, err)
+}
+
+func TestRetryPipeline(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/api/v4/projects/1/pipelines/300/retry", r.URL.Path)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{
+			"id": 301, "status": "pending", "ref": "main",
+			"sha": "aaa111", "web_url": "https://gitlab.com/pipeline/301"
+		}`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	pipeline, err := client.RetryPipeline(context.Background(), 1, 300)
+	require.NoError(t, err)
+	require.NotNil(t, pipeline)
+
+	assert.Equal(t, 301, pipeline.ID)
+	assert.Equal(t, "pending", pipeline.Status)
+	assert.Equal(t, "main", pipeline.Ref)
+	assert.Equal(t, "aaa111", pipeline.SHA)
+	assert.Equal(t, "https://gitlab.com/pipeline/301", pipeline.WebURL)
+}
+
+func TestGetCurrentUser(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v4/user", r.URL.Path)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"id": 42, "username": "testuser", "name": "Test User"}`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	user, err := client.GetCurrentUser(context.Background())
+	require.NoError(t, err)
+
+	assert.Equal(t, 42, user.ID)
+	assert.Equal(t, "testuser", user.Username)
+	assert.Equal(t, "Test User", user.Name)
+}

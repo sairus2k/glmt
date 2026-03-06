@@ -1,0 +1,11 @@
+hosts:
+  gitlab.example.com:
+    token: glpat-xxxxxxxxxxxxxxxxxxxx
+    api_host: gitlab.example.com
+    git_protocol: ssh
+    api_protocol: https
+  gitlab.other.com:
+    token: glpat-yyyyyyyyyyyyyyyyyyyy
+    api_host: gitlab.other.com
+    git_protocol: https
+    api_protocol: http
