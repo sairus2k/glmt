@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/testcontainers/testcontainers-go/network"
 )
 
 // testEnv holds references to the running GitLab container and test data.
@@ -29,53 +29,62 @@ type testEnv struct {
 }
 
 // setupGitLab starts a GitLab CE container, seeds test data, and returns the test environment.
-// This is slow (~3-5 min for GitLab to boot).
 func setupGitLab(t *testing.T) *testEnv {
 	t.Helper()
 	ctx := context.Background()
 
+	// Create a Docker network so GitLab and the runner can communicate
+	t.Log("Creating Docker network...")
+	net, err := network.New(ctx)
+	if err != nil {
+		t.Fatalf("Failed to create Docker network: %v", err)
+	}
+	networkName := net.Name
+
 	t.Log("Starting GitLab CE container (this takes a few minutes)...")
-	req := testcontainers.ContainerRequest{
-		Image:        "gitlab/gitlab-ce:latest",
+	gitlabReq := testcontainers.ContainerRequest{
+		Image:        "gitlab/gitlab-ce:17.4.0-ce.0",
 		ExposedPorts: []string{"80/tcp"},
+		Networks:     []string{networkName},
+		NetworkAliases: map[string][]string{
+			networkName: {"gitlab"},
+		},
 		Env: map[string]string{
 			"GITLAB_OMNIBUS_CONFIG": strings.Join([]string{
-				"external_url 'http://gitlab.local'",
+				"external_url 'http://gitlab'",
 				"gitlab_rails['initial_root_password'] = 'glmt-test-password-123'",
+				// Reduce memory footprint
+				"puma['worker_processes'] = 0",
+				"sidekiq['concurrency'] = 2",
+				"postgresql['shared_buffers'] = '128MB'",
+				// Disable non-essential services
 				"prometheus_monitoring['enable'] = false",
 				"alertmanager['enable'] = false",
-				"grafana['enable'] = false",
 				"gitlab_kas['enable'] = false",
-				"sentinel['enable'] = false",
 				"registry['enable'] = false",
 				"mattermost['enable'] = false",
 				"gitlab_pages['enable'] = false",
 				"gitlab_rails['gitlab_shell_ssh_port'] = 2222",
 			}, "; "),
 		},
-		WaitingFor: wait.ForHTTP("/-/readiness").
-			WithPort("80/tcp").
-			WithStatusCodeMatcher(func(status int) bool {
-				return status == 200
-			}).
-			WithStartupTimeout(10 * time.Minute).
-			WithPollInterval(10 * time.Second),
+		// No WaitingFor — we handle readiness ourselves via waitForAPI()
+		// because GitLab CE is amd64-only and very slow to boot on arm64.
 	}
 
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
+	gitlabContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: gitlabReq,
 		Started:          true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to start GitLab container: %v", err)
 	}
 
-	mappedPort, err := container.MappedPort(ctx, "80")
+	mappedPort, err := gitlabContainer.MappedPort(ctx, "80")
 	if err != nil {
 		t.Fatalf("Failed to get mapped port: %v", err)
 	}
 
-	hostIP, err := container.Host(ctx)
+	hostIP, err := gitlabContainer.Host(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get container host: %v", err)
 	}
@@ -100,8 +109,12 @@ test:
 `)
 	t.Log("Created .gitlab-ci.yml on main branch")
 
-	registerRunner(t, ctx, container, gitlabURL, token)
-	t.Log("Registered shared runner")
+	// Create runner via API and start sidecar container
+	runnerContainer := startRunner(t, ctx, networkName, gitlabURL, token)
+	t.Log("Runner sidecar started")
+
+	// Wait for GitLab to stabilize after runner start (memory pressure can cause 502s)
+	waitForAPI(t, gitlabURL)
 
 	mrIIDs := createTestMRs(t, gitlabURL, token, projectID)
 	t.Logf("Created %d test MRs: %v", len(mrIIDs), mrIIDs)
@@ -115,14 +128,16 @@ test:
 		projectID: projectID,
 		mrIIDs:    mrIIDs,
 		cleanup: func() {
-			_ = container.Terminate(ctx)
+			_ = runnerContainer.Terminate(ctx)
+			_ = gitlabContainer.Terminate(ctx)
+			_ = net.Remove(ctx)
 		},
 	}
 }
 
 func waitForAPI(t *testing.T, gitlabURL string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Minute)
+	deadline := time.Now().Add(15 * time.Minute)
 	for time.Now().Before(deadline) {
 		resp, err := http.Get(gitlabURL + "/api/v4/version")
 		if err == nil {
@@ -134,6 +149,41 @@ func waitForAPI(t *testing.T, gitlabURL string) {
 		time.Sleep(5 * time.Second)
 	}
 	t.Fatal("GitLab API did not become ready in time")
+}
+
+// apiDo performs an HTTP request with retry on transient errors (502, 503, EOF).
+func apiDo(t *testing.T, req *http.Request) *http.Response {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Minute)
+	var body []byte
+	if req.Body != nil {
+		var err error
+		body, err = io.ReadAll(req.Body)
+		if err != nil {
+			t.Fatalf("Failed to read request body: %v", err)
+		}
+	}
+
+	for time.Now().Before(deadline) {
+		if body != nil {
+			req.Body = io.NopCloser(bytes.NewReader(body))
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Logf("Retrying %s %s: %v", req.Method, req.URL.Path, err)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		if resp.StatusCode == 502 || resp.StatusCode == 503 {
+			_ = resp.Body.Close()
+			t.Logf("Retrying %s %s: status %d", req.Method, req.URL.Path, resp.StatusCode)
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		return resp
+	}
+	t.Fatalf("Timeout on %s %s", req.Method, req.URL.Path)
+	return nil
 }
 
 func createRootToken(t *testing.T, gitlabURL string) string {
@@ -169,10 +219,7 @@ func createRootToken(t *testing.T, gitlabURL string) string {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+oauthResp.AccessToken)
 
-	resp2, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("Failed to create PAT: %v", err)
-	}
+	resp2 := apiDo(t, req)
 	defer func() { _ = resp2.Body.Close() }()
 
 	if resp2.StatusCode != 201 {
@@ -205,10 +252,7 @@ func createProject(t *testing.T, gitlabURL, token string) int {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("PRIVATE-TOKEN", token)
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("Failed to create project: %v", err)
-	}
+	resp := apiDo(t, req)
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 201 {
@@ -241,57 +285,53 @@ func createFile(t *testing.T, gitlabURL, token string, projectID int, branch, fi
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("PRIVATE-TOKEN", token)
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("Failed to create file %s: %v", filePath, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
+	resp := apiDo(t, req)
 
 	if resp.StatusCode == 400 {
+		_ = resp.Body.Close()
+		// File already exists, update it
 		req2, _ := http.NewRequest("PUT", url, bytes.NewReader(body))
 		req2.Header.Set("Content-Type", "application/json")
 		req2.Header.Set("PRIVATE-TOKEN", token)
-		resp2, err := http.DefaultClient.Do(req2)
-		if err != nil {
-			t.Fatalf("Failed to update file %s: %v", filePath, err)
-		}
+		resp2 := apiDo(t, req2)
 		defer func() { _ = resp2.Body.Close() }()
 		if resp2.StatusCode != 200 {
 			respBody, _ := io.ReadAll(resp2.Body)
 			t.Fatalf("File update for %s failed with status %d: %s", filePath, resp2.StatusCode, string(respBody))
 		}
-	} else if resp.StatusCode != 201 {
+		return
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != 201 {
 		respBody, _ := io.ReadAll(resp.Body)
 		t.Fatalf("File creation for %s failed with status %d: %s", filePath, resp.StatusCode, string(respBody))
 	}
 }
 
-func registerRunner(t *testing.T, ctx context.Context, container testcontainers.Container, gitlabURL, token string) {
+// startRunner creates a runner via the GitLab 17.x API and launches
+// a gitlab/gitlab-runner sidecar container on the same Docker network.
+func startRunner(t *testing.T, ctx context.Context, networkName, gitlabURL, token string) testcontainers.Container {
 	t.Helper()
 
+	// Create runner via new GitLab 17.x API (works with PAT)
 	data := map[string]interface{}{
-		"token":        token,
-		"description":  "e2e-shared-runner",
-		"tag_list":     "shared",
+		"runner_type":  "instance_type",
+		"tag_list":     []string{"shared"},
 		"run_untagged": true,
-		"access_level": "not_protected",
+		"description":  "e2e-shared-runner",
 	}
 	body, _ := json.Marshal(data)
-	req, _ := http.NewRequest("POST", gitlabURL+"/api/v4/runners", bytes.NewReader(body))
+	req, _ := http.NewRequest("POST", gitlabURL+"/api/v4/user/runners", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("PRIVATE-TOKEN", token)
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("Failed to register runner: %v", err)
-	}
+	resp := apiDo(t, req)
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 201 {
 		respBody, _ := io.ReadAll(resp.Body)
-		t.Logf("Runner registration via API failed (%d): %s", resp.StatusCode, string(respBody))
-		registerRunnerViaExec(t, ctx, container)
-		return
+		t.Fatalf("Runner creation failed (%d): %s", resp.StatusCode, string(respBody))
 	}
 
 	var runnerResp struct {
@@ -301,85 +341,46 @@ func registerRunner(t *testing.T, ctx context.Context, container testcontainers.
 	if err := json.NewDecoder(resp.Body).Decode(&runnerResp); err != nil {
 		t.Fatalf("Failed to decode runner response: %v", err)
 	}
+	t.Logf("Created runner ID=%d", runnerResp.ID)
 
-	startRunnerProcess(t, ctx, container, runnerResp.Token)
-}
+	// Runner config — connects to GitLab via the Docker network alias "gitlab"
+	configContent := fmt.Sprintf(`concurrent = 1
+check_interval = 3
 
-func registerRunnerViaExec(t *testing.T, ctx context.Context, container testcontainers.Container) {
-	t.Helper()
-
-	code, reader, err := container.Exec(ctx, []string{
-		"gitlab-rails", "runner",
-		"puts Gitlab::CurrentSettings.current_application_settings.runners_registration_token",
-	})
-	if err != nil || code != 0 {
-		_, reader, err = container.Exec(ctx, []string{
-			"gitlab-rails", "runner",
-			"puts ApplicationSetting.current.runners_registration_token || 'none'",
-		})
-		if err != nil {
-			t.Logf("Warning: could not get runner registration token: %v", err)
-			return
-		}
-	}
-
-	output, _ := io.ReadAll(reader)
-	regToken := strings.TrimSpace(string(output))
-	if regToken == "" || regToken == "none" {
-		t.Log("Warning: no runner registration token available, skipping runner setup")
-		return
-	}
-
-	_, _, err = container.Exec(ctx, []string{
-		"gitlab-runner", "register",
-		"--non-interactive",
-		"--url", "http://localhost",
-		"--registration-token", regToken,
-		"--executor", "shell",
-		"--tag-list", "shared",
-		"--run-untagged=true",
-		"--description", "e2e-runner",
-	})
-	if err != nil {
-		t.Logf("Warning: runner registration failed: %v", err)
-		return
-	}
-
-	_, _, err = container.Exec(ctx, []string{
-		"sh", "-c", "nohup gitlab-runner run --working-directory=/tmp/runner &",
-	})
-	if err != nil {
-		t.Logf("Warning: runner start failed: %v", err)
-	}
-}
-
-func startRunnerProcess(t *testing.T, ctx context.Context, container testcontainers.Container, runnerToken string) {
-	t.Helper()
-
-	configContent := fmt.Sprintf(`
-concurrent = 1
 [[runners]]
   name = "e2e-runner"
-  url = "http://localhost"
+  url = "http://gitlab"
   token = "%s"
   executor = "shell"
   [runners.cache]
-`, runnerToken)
+`, runnerResp.Token)
 
-	code, _, err := container.Exec(ctx, []string{
-		"sh", "-c", fmt.Sprintf("mkdir -p /etc/gitlab-runner && echo '%s' > /etc/gitlab-runner/config.toml", configContent),
-	})
-	if err != nil || code != 0 {
-		t.Logf("Warning: failed to write runner config: %v (code %d)", err, code)
-		return
+	// Start gitlab-runner sidecar container
+	runnerReq := testcontainers.ContainerRequest{
+		Image:    "gitlab/gitlab-runner:v17.4.0",
+		Networks: []string{networkName},
+		Files: []testcontainers.ContainerFile{
+			{
+				Reader:            strings.NewReader(configContent),
+				ContainerFilePath: "/etc/gitlab-runner/config.toml",
+				FileMode:          0644,
+			},
+		},
 	}
 
-	code, _, err = container.Exec(ctx, []string{
-		"sh", "-c", "nohup gitlab-runner run &",
+	runnerContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: runnerReq,
+		Started:          true,
 	})
-	if err != nil || code != 0 {
-		t.Logf("Warning: failed to start runner: %v (code %d)", err, code)
+	if err != nil {
+		t.Fatalf("Failed to start runner container: %v", err)
 	}
+
+	// Give the runner a moment to connect and verify
+	time.Sleep(3 * time.Second)
+	checkRunnersAPI(t, gitlabURL, token)
+
+	return runnerContainer
 }
 
 func createTestMRs(t *testing.T, gitlabURL, token string, projectID int) []int {
@@ -406,10 +407,7 @@ func createTestMRs(t *testing.T, gitlabURL, token string, projectID int) []int {
 		req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v4/projects/%d/repository/branches", gitlabURL, projectID), bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("PRIVATE-TOKEN", token)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("Failed to create branch %s: %v", br.name, err)
-		}
+		resp := apiDo(t, req)
 		_ = resp.Body.Close()
 
 		createFile(t, gitlabURL, token, projectID, br.name, br.fileName, br.content)
@@ -423,10 +421,7 @@ func createTestMRs(t *testing.T, gitlabURL, token string, projectID int) []int {
 		mrReq, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v4/projects/%d/merge_requests", gitlabURL, projectID), bytes.NewReader(mrBody))
 		mrReq.Header.Set("Content-Type", "application/json")
 		mrReq.Header.Set("PRIVATE-TOKEN", token)
-		mrResp, err := http.DefaultClient.Do(mrReq)
-		if err != nil {
-			t.Fatalf("Failed to create MR for %s: %v", br.name, err)
-		}
+		mrResp := apiDo(t, mrReq)
 
 		if mrResp.StatusCode != 201 {
 			respBody, _ := io.ReadAll(mrResp.Body)
@@ -475,6 +470,20 @@ func waitForMRPipelines(t *testing.T, gitlabURL, token string, projectID int, mr
 	}
 }
 
+func checkRunnersAPI(t *testing.T, gitlabURL, token string) {
+	t.Helper()
+	req, _ := http.NewRequest("GET", gitlabURL+"/api/v4/runners/all", nil)
+	req.Header.Set("PRIVATE-TOKEN", token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Logf("Failed to check runners: %v", err)
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(resp.Body)
+	t.Logf("Registered runners: %s", string(body))
+}
+
 func getMRPipelineStatus(t *testing.T, gitlabURL, token string, projectID, mrIID int) string {
 	t.Helper()
 
@@ -487,6 +496,10 @@ func getMRPipelineStatus(t *testing.T, gitlabURL, token string, projectID, mrIID
 		return ""
 	}
 	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == 502 || resp.StatusCode == 503 {
+		return ""
+	}
 
 	var mr struct {
 		HeadPipeline *struct {

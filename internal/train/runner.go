@@ -164,14 +164,15 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 	r.log(mr.IID, "pipeline", "Pipeline passed")
 
 	// Step 3: MERGE (with SHA guard)
-	r.log(mr.IID, "merge", "Getting current MR state...")
-	currentMR, err := r.client.GetMergeRequest(ctx, r.projectID, mr.IID)
+	// Wait for GitLab to finish its internal merge status check
+	r.log(mr.IID, "merge", "Waiting for merge readiness...")
+	currentMR, err := r.waitForMergeReady(ctx, mr.IID)
 	if err != nil {
 		if ctx.Err() != nil {
 			return MRStatusPending, ""
 		}
-		r.log(mr.IID, "merge", fmt.Sprintf("Failed to get MR state: %v", err))
-		return MRStatusSkipped, fmt.Sprintf("failed to get MR state: %v", err)
+		r.log(mr.IID, "merge", fmt.Sprintf("Not mergeable: %v", err))
+		return MRStatusSkipped, fmt.Sprintf("not mergeable: %v", err)
 	}
 
 	r.log(mr.IID, "merge", fmt.Sprintf("Merging with SHA guard (sha=%s)...", currentMR.SHA))
@@ -217,6 +218,30 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 	return MRStatusMerged, ""
 }
 
+func (r *Runner) waitForMergeReady(ctx context.Context, mrIID int) (*gitlab.MergeRequest, error) {
+	for {
+		mr, err := r.client.GetMergeRequest(ctx, r.projectID, mrIID)
+		if err != nil {
+			return nil, err
+		}
+
+		switch mr.DetailedMergeStatus {
+		case "mergeable":
+			return mr, nil
+		case "checking", "unchecked":
+			// Still checking, poll again
+		default:
+			return mr, fmt.Errorf("merge status: %s", mr.DetailedMergeStatus)
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(r.PollRebaseInterval):
+		}
+	}
+}
+
 func (r *Runner) waitForMRPipeline(ctx context.Context, mrIID int) (*gitlab.Pipeline, error) {
 	for {
 		pipeline, err := r.client.GetMergeRequestPipeline(ctx, r.projectID, mrIID)
@@ -224,9 +249,11 @@ func (r *Runner) waitForMRPipeline(ctx context.Context, mrIID int) (*gitlab.Pipe
 			return nil, err
 		}
 
-		switch pipeline.Status {
-		case "success", "failed", "canceled", "skipped":
-			return pipeline, nil
+		if pipeline != nil {
+			switch pipeline.Status {
+			case "success", "failed", "canceled", "skipped":
+				return pipeline, nil
+			}
 		}
 
 		// Wait before polling again

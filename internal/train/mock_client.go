@@ -62,7 +62,7 @@ func (m *MockClient) GetMergeRequest(ctx context.Context, projectID, mrIID int) 
 	if m.GetMergeRequestFn != nil {
 		return m.GetMergeRequestFn(ctx, projectID, mrIID)
 	}
-	return &gitlab.MergeRequest{IID: mrIID}, nil
+	return &gitlab.MergeRequest{IID: mrIID, DetailedMergeStatus: "mergeable"}, nil
 }
 
 func (m *MockClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int) error {
