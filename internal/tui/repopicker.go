@@ -56,8 +56,21 @@ func (m RepoPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case tea.PasteMsg:
+		m.search += msg.Content
+		m.filtered = filterProjects(m.projects, m.search)
+		if m.cursor >= len(m.filtered) && len(m.filtered) > 0 {
+			m.cursor = len(m.filtered) - 1
+		} else if len(m.filtered) == 0 {
+			m.cursor = 0
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		switch msg.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+
 		case "down", "j":
 			if len(m.filtered) > 0 && m.cursor < len(m.filtered)-1 {
 				m.cursor++

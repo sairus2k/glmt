@@ -97,7 +97,7 @@ func (m TrainRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m TrainRunModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	switch key {
-	case "q":
+	case "q", "ctrl+c":
 		m.aborted = true
 		return m, func() tea.Msg { return trainAbortMsg{} }
 	}

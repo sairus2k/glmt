@@ -121,15 +121,21 @@ func (m MRListModel) handleMRsLoaded(msg mrsLoadedMsg) MRListModel {
 
 func (m MRListModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	total := m.totalCount()
+	key := msg.String()
+
+	if key == "ctrl+c" {
+		return m, tea.Quit
+	}
+
 	if total == 0 {
 		// Handle quit even with no MRs.
-		if msg.String() == "q" {
+		if key == "q" {
 			return m, tea.Quit
 		}
 		return m, nil
 	}
 
-	switch msg.String() {
+	switch key {
 	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--

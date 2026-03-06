@@ -61,6 +61,8 @@ func (m SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		return m.handleKeyPress(msg)
+	case tea.PasteMsg:
+		return m.handlePaste(msg.Content), nil
 	case credentialsValidMsg:
 		m.state = SetupStateSuccess
 		m.userName = msg.userName
@@ -71,6 +73,22 @@ func (m SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+func (m SetupModel) handlePaste(content string) SetupModel {
+	// Strip newlines/tabs from pasted content
+	content = strings.ReplaceAll(content, "\n", "")
+	content = strings.ReplaceAll(content, "\r", "")
+	content = strings.ReplaceAll(content, "\t", "")
+	switch m.state {
+	case SetupStateHost:
+		m.host = m.host[:m.cursor] + content + m.host[m.cursor:]
+		m.cursor += len(content)
+	case SetupStateToken:
+		m.token = m.token[:m.cursor] + content + m.token[m.cursor:]
+		m.cursor += len(content)
+	}
+	return m
 }
 
 func (m SetupModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -111,6 +129,27 @@ func (m SetupModel) handleHostInput(msg tea.KeyPressMsg, key string) (tea.Model,
 			m.cursor--
 		}
 		return m, nil
+	case "delete":
+		if m.cursor < len(m.host) {
+			m.host = m.host[:m.cursor] + m.host[m.cursor+1:]
+		}
+		return m, nil
+	case "left":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+		return m, nil
+	case "right":
+		if m.cursor < len(m.host) {
+			m.cursor++
+		}
+		return m, nil
+	case "home", "ctrl+a":
+		m.cursor = 0
+		return m, nil
+	case "end", "ctrl+e":
+		m.cursor = len(m.host)
+		return m, nil
 	case "esc":
 		return m, tea.Quit
 	default:
@@ -136,6 +175,27 @@ func (m SetupModel) handleTokenInput(msg tea.KeyPressMsg, key string) (tea.Model
 			m.token = m.token[:m.cursor-1] + m.token[m.cursor:]
 			m.cursor--
 		}
+		return m, nil
+	case "delete":
+		if m.cursor < len(m.token) {
+			m.token = m.token[:m.cursor] + m.token[m.cursor+1:]
+		}
+		return m, nil
+	case "left":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+		return m, nil
+	case "right":
+		if m.cursor < len(m.token) {
+			m.cursor++
+		}
+		return m, nil
+	case "home", "ctrl+a":
+		m.cursor = 0
+		return m, nil
+	case "end", "ctrl+e":
+		m.cursor = len(m.token)
 		return m, nil
 	case "esc":
 		m.state = SetupStateHost
