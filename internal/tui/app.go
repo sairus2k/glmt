@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -52,7 +51,7 @@ func NewAppModel(creds *auth.Credentials, cfg *config.Config, cfgPath string) Ap
 		m.screen = ScreenSetup
 		sm := NewSetupModel()
 		sm.ValidateFn = func(host, token string) (string, error) {
-			c, err := gitlab.NewAPIClient(fmt.Sprintf("%s://%s", "https", host), token)
+			c, err := gitlab.NewAPIClient(host, token)
 			if err != nil {
 				return "", err
 			}
@@ -65,7 +64,7 @@ func NewAppModel(creds *auth.Credentials, cfg *config.Config, cfgPath string) Ap
 		}
 		m.setup = sm
 	} else {
-		c, err := gitlab.NewAPIClient(fmt.Sprintf("%s://%s", creds.Protocol, creds.Host), creds.Token)
+		c, err := gitlab.NewAPIClient(creds.Host, creds.Token)
 		if err == nil {
 			m.client = c
 		}

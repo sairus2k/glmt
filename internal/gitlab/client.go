@@ -16,12 +16,29 @@ type APIClient struct {
 }
 
 // NewAPIClient creates a new GitLab API client.
+// host should be a base URL like "https://gitlab.example.com" or just a hostname.
 func NewAPIClient(host, token string) (*APIClient, error) {
+	host = normalizeBaseURL(host)
 	client, err := goGitLab.NewClient(token, goGitLab.WithBaseURL(host+"/api/v4"))
 	if err != nil {
 		return nil, fmt.Errorf("creating GitLab client: %w", err)
 	}
 	return &APIClient{client: client}, nil
+}
+
+// normalizeBaseURL ensures the host is a clean URL with scheme.
+// Preserves http:// if explicitly provided, defaults to https://.
+func normalizeBaseURL(host string) string {
+	scheme := "https"
+	if strings.HasPrefix(host, "http://") {
+		scheme = "http"
+	}
+	// Strip any existing scheme variants
+	for _, prefix := range []string{"https://", "http://", "https//", "http//"} {
+		host = strings.TrimPrefix(host, prefix)
+	}
+	host = strings.TrimRight(host, "/")
+	return scheme + "://" + host
 }
 
 // SetProject sets the project ID for subsequent API calls.
