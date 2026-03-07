@@ -11,8 +11,9 @@ import (
 
 // APIClient implements the Client interface using the go-gitlab library.
 type APIClient struct {
-	client    *goGitLab.Client
-	projectID int
+	client             *goGitLab.Client
+	projectID          int
+	rebasePollInterval time.Duration
 }
 
 // NewAPIClient creates a new GitLab API client.
@@ -23,7 +24,7 @@ func NewAPIClient(host, token string) (*APIClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating GitLab client: %w", err)
 	}
-	return &APIClient{client: client}, nil
+	return &APIClient{client: client, rebasePollInterval: 2 * time.Second}, nil
 }
 
 // normalizeBaseURL ensures the host is a clean URL with scheme.
@@ -149,7 +150,7 @@ func (c *APIClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(2 * time.Second):
+		case <-time.After(c.rebasePollInterval):
 		}
 
 		opts := &goGitLab.GetMergeRequestsOptions{

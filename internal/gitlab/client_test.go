@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,6 +18,7 @@ func newTestClient(t *testing.T, server *httptest.Server) *APIClient {
 	t.Helper()
 	client, err := NewAPIClient(server.URL, "test-token")
 	require.NoError(t, err)
+	client.rebasePollInterval = 1 * time.Millisecond
 	return client
 }
 
