@@ -15,31 +15,37 @@ var (
 		IID: 42, Title: "Fix auth token expiry", Author: "alice",
 		HeadPipelineStatus: "success", DetailedMergeStatus: "mergeable",
 		BlockingDiscussionsResolved: true, CreatedAt: "2025-01-10T00:00:00Z",
+		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/42",
 	}
 	eligibleMR2 = &gitlab.MergeRequest{
 		IID: 38, Title: "Add rate limiting", Author: "bob",
 		HeadPipelineStatus: "success", DetailedMergeStatus: "mergeable",
 		BlockingDiscussionsResolved: true, CreatedAt: "2025-01-11T00:00:00Z",
+		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/38",
 	}
 	draftMR = &gitlab.MergeRequest{
 		IID: 51, Title: "WIP: new dashboard", Author: "dave",
 		Draft: true, HeadPipelineStatus: "success", DetailedMergeStatus: "mergeable",
 		BlockingDiscussionsResolved: true,
+		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/51",
 	}
 	runningMR = &gitlab.MergeRequest{
 		IID: 47, Title: "Add oauth flow", Author: "eve",
 		HeadPipelineStatus: "running", DetailedMergeStatus: "mergeable",
 		BlockingDiscussionsResolved: true,
+		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/47",
 	}
 	conflictMR = &gitlab.MergeRequest{
 		IID: 40, Title: "Update deps", Author: "grace",
 		HeadPipelineStatus: "success", DetailedMergeStatus: "broken_status",
 		BlockingDiscussionsResolved: true,
+		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/40",
 	}
 	unresolvedMR = &gitlab.MergeRequest{
 		IID: 44, Title: "DB migration", Author: "frank",
 		HeadPipelineStatus: "success", DetailedMergeStatus: "mergeable",
 		BlockingDiscussionsResolved: false,
+		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/44",
 	}
 )
 
@@ -281,6 +287,33 @@ func TestMRList_ViewShowsBadges(t *testing.T) {
 	assert.Contains(t, viewStr, "[pipeline running]")
 	assert.Contains(t, viewStr, "[conflicts]")
 	assert.Contains(t, viewStr, "[unresolved threads]")
+}
+
+func TestMRList_CurrentMRURL(t *testing.T) {
+	m := loadModel(allFixtureMRs())
+
+	// Cursor on first eligible MR.
+	assert.Equal(t, eligibleMR1.WebURL, m.currentMRURL())
+
+	// Move to second eligible MR.
+	m = sendKey(m, "j")
+	assert.Equal(t, eligibleMR2.WebURL, m.currentMRURL())
+
+	// Move into ineligible section (first ineligible is draftMR after sorting).
+	m = sendKey(m, "j")
+	assert.Equal(t, m.Ineligible()[0].MR.WebURL, m.currentMRURL())
+
+	// Move cursor past all items — should return empty.
+	for i := 0; i < 10; i++ {
+		m = sendKey(m, "j")
+	}
+	// Cursor is clamped to last item, so URL should still be valid.
+	assert.NotEmpty(t, m.currentMRURL())
+}
+
+func TestMRList_CurrentMRURL_Empty(t *testing.T) {
+	m := loadModel(nil)
+	assert.Equal(t, "", m.currentMRURL())
 }
 
 func TestMRList_ViewShowsSelectionCount(t *testing.T) {

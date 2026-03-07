@@ -192,6 +192,11 @@ func (m MRListModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		return m.startTrain()
 
+	case "o":
+		if url := m.currentMRURL(); url != "" {
+			_ = openBrowser(url)
+		}
+
 	case "q":
 		return m, tea.Quit
 	}
@@ -389,6 +394,7 @@ func (m MRListModel) View() tea.View {
 func (m MRListModel) KeyHints() []KeyHint {
 	if m.loading || m.totalCount() == 0 {
 		return []KeyHint{
+			{"[o]", "open"},
 			{"[R]", "refresh"},
 			{"[r]", "change repo"},
 			{"[Esc]", "quit"},
@@ -398,6 +404,7 @@ func (m MRListModel) KeyHints() []KeyHint {
 		{"[Space]", "toggle"},
 		{"[a]", "all"},
 		{"[Shift+↑↓]", "reorder"},
+		{"[o]", "open"},
 		{"[R]", "refresh"},
 		{"[r]", "change repo"},
 		{"[Enter]", "start"},
@@ -460,4 +467,16 @@ func (m MRListModel) Ineligible() []IneligibleMR {
 // SelectedCount returns the number of selected MRs.
 func (m MRListModel) SelectedCount() int {
 	return len(m.selected)
+}
+
+// currentMRURL returns the WebURL of the MR under the cursor.
+func (m MRListModel) currentMRURL() string {
+	if m.cursor < len(m.eligible) {
+		return m.eligible[m.cursor].WebURL
+	}
+	idx := m.cursor - len(m.eligible)
+	if idx < len(m.ineligible) {
+		return m.ineligible[idx].MR.WebURL
+	}
+	return ""
 }
