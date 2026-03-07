@@ -198,7 +198,7 @@ func (m AppModel) View() tea.View {
 	}
 
 	// Header (3 lines)
-	header := "\n  " + sHeader.Styled("glmt") + "\n\n"
+	header := "\n" + renderHeader(m.width) + "\n\n"
 
 	// Pad content to fill available space
 	contentLines := strings.Count(view.Content, "\n")

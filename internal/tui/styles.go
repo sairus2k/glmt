@@ -48,6 +48,21 @@ func renderFooter(hints []KeyHint, loginStatus string, width int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
+// renderHeader renders the header line with app name on the left and GitHub link on the right.
+func renderHeader(width int) string {
+	left := "  " + sBold.Styled("glmt") + " " + sFaint.Styled("— GitLab Merge Train")
+	right := sFaint.Styled("GitHub: https://github.com/sairus2k/glmt")
+
+	leftLen := ansi.StringWidth(left)
+	rightLen := ansi.StringWidth(right)
+
+	gap := width - leftLen - rightLen
+	if gap < 2 {
+		gap = 2
+	}
+	return left + strings.Repeat(" ", gap) + right
+}
+
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 type spinnerTickMsg time.Time
