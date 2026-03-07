@@ -19,7 +19,7 @@ type MockClient struct {
 	// Configurable responses per method
 	GetCurrentUserFn          func(ctx context.Context) (*gitlab.User, error)
 	ListProjectsFn            func(ctx context.Context, search string) ([]*gitlab.Project, error)
-	ListMergeRequestsFullFn func(ctx context.Context, projectPath string) ([]*gitlab.MergeRequest, error)
+	ListMergeRequestsFullFn   func(ctx context.Context, projectPath string) ([]*gitlab.MergeRequest, error)
 	GetMergeRequestFn         func(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error)
 	RebaseMergeRequestFn      func(ctx context.Context, projectID, mrIID int) error
 	MergeMergeRequestFn       func(ctx context.Context, projectID, mrIID int, sha string) error

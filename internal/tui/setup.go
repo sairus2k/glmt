@@ -320,7 +320,7 @@ func (m SetupModel) View() tea.View {
 		b.WriteString(strings.Repeat("*", len(m.token)))
 		b.WriteString("\n\n")
 		b.WriteString("  ")
-		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame]+" Validating credentials..."))
+		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame] + " Validating credentials..."))
 		b.WriteString("\n")
 
 		view = tea.NewView(b.String())

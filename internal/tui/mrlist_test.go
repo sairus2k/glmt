@@ -27,25 +27,25 @@ var (
 		IID: 51, Title: "WIP: new dashboard", Author: "dave",
 		Draft: true, HeadPipelineStatus: "success", DetailedMergeStatus: "mergeable",
 		BlockingDiscussionsResolved: true,
-		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/51",
+		WebURL:                      "https://gitlab.com/myteam/myrepo/-/merge_requests/51",
 	}
 	runningMR = &gitlab.MergeRequest{
 		IID: 47, Title: "Add oauth flow", Author: "eve",
 		HeadPipelineStatus: "running", DetailedMergeStatus: "mergeable",
 		BlockingDiscussionsResolved: true,
-		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/47",
+		WebURL:                      "https://gitlab.com/myteam/myrepo/-/merge_requests/47",
 	}
 	conflictMR = &gitlab.MergeRequest{
 		IID: 40, Title: "Update deps", Author: "grace",
 		HeadPipelineStatus: "success", DetailedMergeStatus: "broken_status",
 		BlockingDiscussionsResolved: true,
-		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/40",
+		WebURL:                      "https://gitlab.com/myteam/myrepo/-/merge_requests/40",
 	}
 	unresolvedMR = &gitlab.MergeRequest{
 		IID: 44, Title: "DB migration", Author: "frank",
 		HeadPipelineStatus: "success", DetailedMergeStatus: "mergeable",
 		BlockingDiscussionsResolved: false,
-		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/44",
+		WebURL:                      "https://gitlab.com/myteam/myrepo/-/merge_requests/44",
 	}
 )
 

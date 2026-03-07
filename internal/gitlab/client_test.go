@@ -355,9 +355,9 @@ func TestListMergeRequestsFull(t *testing.T) {
 	assert.Equal(t, "abc123", mrs[0].SHA)
 	assert.Equal(t, 3, mrs[0].CommitCount)
 	assert.False(t, mrs[0].Draft)
-	assert.Equal(t, "success", mrs[0].HeadPipelineStatus) // lowercased
+	assert.Equal(t, "success", mrs[0].HeadPipelineStatus)    // lowercased
 	assert.Equal(t, "mergeable", mrs[0].DetailedMergeStatus) // lowercased
-	assert.True(t, mrs[0].BlockingDiscussionsResolved) // default true
+	assert.True(t, mrs[0].BlockingDiscussionsResolved)       // default true
 	assert.Equal(t, "https://gitlab.com/mr/10", mrs[0].WebURL)
 
 	assert.Equal(t, 11, mrs[1].IID)

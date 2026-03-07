@@ -262,18 +262,18 @@ func (c *APIClient) ListMergeRequestsFull(ctx context.Context, projectPath strin
 	}`
 
 	type graphQLNode struct {
-		IID                 graphQLStringInt `json:"iid"`
-		Title               string           `json:"title"`
-		Draft               bool             `json:"draft"`
-		CommitCount         int              `json:"commitCount"`
-		Author              *struct {
+		IID         graphQLStringInt `json:"iid"`
+		Title       string           `json:"title"`
+		Draft       bool             `json:"draft"`
+		CommitCount int              `json:"commitCount"`
+		Author      *struct {
 			Username string `json:"username"`
 		} `json:"author"`
-		SourceBranch        string `json:"sourceBranch"`
-		TargetBranch        string `json:"targetBranch"`
-		DiffHeadSha         string `json:"diffHeadSha"`
-		CreatedAt           string `json:"createdAt"`
-		ApprovedBy struct {
+		SourceBranch string `json:"sourceBranch"`
+		TargetBranch string `json:"targetBranch"`
+		DiffHeadSha  string `json:"diffHeadSha"`
+		CreatedAt    string `json:"createdAt"`
+		ApprovedBy   struct {
 			Nodes []struct {
 				Username string `json:"username"`
 			} `json:"nodes"`

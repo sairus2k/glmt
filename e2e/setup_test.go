@@ -242,9 +242,9 @@ func createProject(t *testing.T, gitlabURL, token string) int {
 
 	data := map[string]interface{}{
 		"name":                   "glmt-e2e-test",
-		"visibility":            "private",
+		"visibility":             "private",
 		"initialize_with_readme": true,
-		"default_branch":        "main",
+		"default_branch":         "main",
 	}
 	body, _ := json.Marshal(data)
 

@@ -214,9 +214,9 @@ func TestSetup_ViewShowsAsterisks(t *testing.T) {
 
 func TestSetup_ViewShowsTokenCreationLink(t *testing.T) {
 	tests := []struct {
-		name     string
-		host     string
-		wantURL  string
+		name    string
+		host    string
+		wantURL string
 	}{
 		{"bare host", "gitlab.example.com", "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=glmt&scopes=api"},
 		{"with https", "https://gitlab.example.com", "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=glmt&scopes=api"},
