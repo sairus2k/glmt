@@ -79,12 +79,6 @@ func TestRepoPicker_CursorMovement(t *testing.T) {
 	m = repoPickerPressKey(t, m, "up")
 	assert.Equal(t, 1, m.Cursor())
 
-	// Test j/k movement
-	m = repoPickerPressKey(t, m, "j")
-	assert.Equal(t, 2, m.Cursor())
-
-	m = repoPickerPressKey(t, m, "k")
-	assert.Equal(t, 1, m.Cursor())
 }
 
 func TestRepoPicker_CursorWraps(t *testing.T) {

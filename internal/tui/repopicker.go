@@ -78,13 +78,13 @@ func (m RepoPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 
-		case "down", "j":
+		case "down":
 			if len(m.filtered) > 0 && m.cursor < len(m.filtered)-1 {
 				m.cursor++
 			}
 			return m, nil
 
-		case "up", "k":
+		case "up":
 			if m.cursor > 0 {
 				m.cursor--
 			}
@@ -177,7 +177,7 @@ func (m RepoPickerModel) View() tea.View {
 
 	b.WriteString("\n")
 	b.WriteString("  ")
-	b.WriteString(sFaint.Styled(sKey.Styled("[j/k]") + " navigate  " + sKey.Styled("[Enter]") + " select  " + sKey.Styled("[Esc]") + " clear/quit  " + sKey.Styled("[type]") + " filter"))
+	b.WriteString(sFaint.Styled(sKey.Styled("[↑/↓]") + " navigate  " + sKey.Styled("[Enter]") + " select  " + sKey.Styled("[Esc]") + " clear/quit  " + sKey.Styled("[type]") + " filter"))
 
 	view := tea.NewView(b.String())
 	// Cursor after "  Search: " (col 10) + search length
