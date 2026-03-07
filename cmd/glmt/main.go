@@ -24,6 +24,10 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) > 1 && os.Args[1] == "logout" {
+		return runLogout()
+	}
+
 	nonInteractive := flag.Bool("non-interactive", false, "Skip TUI, run train directly")
 	host := flag.String("host", "", "GitLab host (e.g. gitlab.example.com)")
 	token := flag.String("token", "", "Personal access token")
@@ -146,6 +150,25 @@ func runNonInteractive(host, token string, projectID int, mrsFlag string) error 
 
 	if !allMerged {
 		os.Exit(1)
+	}
+
+	return nil
+}
+
+func runLogout() error {
+	return logout(configPath(), auth.DefaultConfigDir())
+}
+
+func logout(cfgPath, glabConfigDir string) error {
+	err := os.Remove(cfgPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("removing config: %w", err)
+	}
+	fmt.Printf("Logged out. Config removed: %s\n", cfgPath)
+
+	// Check if glab credentials still exist
+	if _, err := auth.ReadCredentials(glabConfigDir, ""); err == nil {
+		fmt.Println("Note: glab CLI credentials still exist at ~/.config/glab-cli/config.yml")
 	}
 
 	return nil
