@@ -297,7 +297,11 @@ func (m MRListModel) View() tea.View {
 		return tea.NewView(b.String())
 	}
 
-	b.WriteString("  Open merge requests                          ")
+	b.WriteString("  ")
+	b.WriteString(sBold.Styled("Open merge requests"))
+	b.WriteString("  ")
+	b.WriteString(sFaint.Styled("select and reorder to set merge sequence"))
+	b.WriteString("  ")
 	b.WriteString(sSuccess.Styled(fmt.Sprintf("%d selected", m.SelectedCount())))
 	b.WriteString(sFaint.Styled(fmt.Sprintf(" / %d eligible", len(m.eligible))))
 	b.WriteString("\n\n")
