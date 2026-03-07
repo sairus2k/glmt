@@ -11,12 +11,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	goGitLab "gitlab.com/gitlab-org/api/client-go"
 )
 
 // newTestClient creates an APIClient pointing at the given test server.
 func newTestClient(t *testing.T, server *httptest.Server) *APIClient {
 	t.Helper()
-	client, err := NewAPIClient(server.URL, "test-token")
+	client, err := NewAPIClient(server.URL, "test-token", goGitLab.WithCustomRetryMax(0))
 	require.NoError(t, err)
 	client.rebasePollInterval = 1 * time.Millisecond
 	return client

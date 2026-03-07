@@ -20,9 +20,10 @@ type APIClient struct {
 
 // NewAPIClient creates a new GitLab API client.
 // host should be a base URL like "https://gitlab.example.com" or just a hostname.
-func NewAPIClient(host, token string) (*APIClient, error) {
+func NewAPIClient(host, token string, opts ...goGitLab.ClientOptionFunc) (*APIClient, error) {
 	host = normalizeBaseURL(host)
-	client, err := goGitLab.NewClient(token, goGitLab.WithBaseURL(host+"/api/v4"))
+	opts = append([]goGitLab.ClientOptionFunc{goGitLab.WithBaseURL(host + "/api/v4")}, opts...)
+	client, err := goGitLab.NewClient(token, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("creating GitLab client: %w", err)
 	}
