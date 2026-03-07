@@ -255,9 +255,6 @@ func (m SetupModel) View() tea.View {
 		b.WriteString(" ")
 		b.WriteString(m.host)
 		b.WriteString("\n")
-		b.WriteString("\n  ")
-		b.WriteString(sFaint.Styled(sKey.Styled("[Enter]")+" continue  "+sKey.Styled("[Esc]")+" quit"))
-		b.WriteString("\n")
 
 		// Cursor after host text: "  GitLab host: " is col 15 + cursor pos
 		// Lines: 0=title, 1=description, 2=blank, 3=host input
@@ -273,9 +270,6 @@ func (m SetupModel) View() tea.View {
 		b.WriteString(sBold.Styled("Personal access token (api scope):"))
 		b.WriteString(" ")
 		b.WriteString(strings.Repeat("*", len(m.token)))
-		b.WriteString("\n")
-		b.WriteString("\n  ")
-		b.WriteString(sFaint.Styled(sKey.Styled("[Enter]")+" validate  "+sKey.Styled("[Esc]")+" back"))
 		b.WriteString("\n")
 
 		// Cursor after token text: "  Personal access token (api scope): " is col 37 + cursor pos
@@ -318,9 +312,6 @@ func (m SetupModel) View() tea.View {
 		b.WriteString("  ")
 		b.WriteString(sError.Styled("✗"))
 		fmt.Fprintf(&b, " Error: %s\n", m.err)
-		b.WriteString("\n  ")
-		b.WriteString(sFaint.Styled(sKey.Styled("[any key]") + " retry"))
-		b.WriteString("\n")
 
 		view = tea.NewView(b.String())
 	default:
@@ -346,3 +337,17 @@ func (m SetupModel) UserName() string { return m.userName }
 
 // Err returns the validation error (set after validation failure).
 func (m SetupModel) Err() error { return m.err }
+
+// KeyHints returns the keyboard hints for the current setup state.
+func (m SetupModel) KeyHints() []KeyHint {
+	switch m.state {
+	case SetupStateHost:
+		return []KeyHint{{"[Enter]", "continue"}, {"[Esc]", "quit"}}
+	case SetupStateToken:
+		return []KeyHint{{"[Enter]", "validate"}, {"[Esc]", "back"}}
+	case SetupStateError:
+		return []KeyHint{{"[any key]", "retry"}}
+	default:
+		return nil
+	}
+}

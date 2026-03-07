@@ -19,13 +19,15 @@ type repoSelectedMsg struct {
 
 // RepoPickerModel is a bubbletea model for the repo picker screen.
 type RepoPickerModel struct {
-	projects     []*gitlab.Project
-	filtered     []*gitlab.Project
-	cursor       int
-	search       string
-	selected     *gitlab.Project
-	autoDetect   string // pre-detected project path
-	spinnerFrame int
+	projects      []*gitlab.Project
+	filtered      []*gitlab.Project
+	cursor        int
+	search        string
+	selected      *gitlab.Project
+	autoDetect    string // pre-detected project path
+	spinnerFrame  int
+	contentHeight int
+	scrollOffset  int
 }
 
 // NewRepoPickerModel creates a new RepoPickerModel with an optional auto-detected project path.
@@ -81,12 +83,14 @@ func (m RepoPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down":
 			if len(m.filtered) > 0 && m.cursor < len(m.filtered)-1 {
 				m.cursor++
+				m.adjustScroll()
 			}
 			return m, nil
 
 		case "up":
 			if m.cursor > 0 {
 				m.cursor--
+				m.adjustScroll()
 			}
 			return m, nil
 
@@ -162,7 +166,13 @@ func (m RepoPickerModel) View() tea.View {
 		b.WriteString(sFaint.Styled("No matching projects."))
 		b.WriteString("\n")
 	} else {
-		for i, p := range m.filtered {
+		visible := m.visibleItems()
+		end := m.scrollOffset + visible
+		if end > len(m.filtered) {
+			end = len(m.filtered)
+		}
+		for i := m.scrollOffset; i < end; i++ {
+			p := m.filtered[i]
 			if i == m.cursor {
 				b.WriteString("  ")
 				b.WriteString(sCursor.Styled("> "))
@@ -174,10 +184,6 @@ func (m RepoPickerModel) View() tea.View {
 			b.WriteString("\n")
 		}
 	}
-
-	b.WriteString("\n")
-	b.WriteString("  ")
-	b.WriteString(sFaint.Styled(sKey.Styled("[↑/↓]") + " navigate  " + sKey.Styled("[Enter]") + " select  " + sKey.Styled("[Esc]") + " clear/quit  " + sKey.Styled("[type]") + " filter"))
 
 	view := tea.NewView(b.String())
 	// Cursor after "  Search: " (col 10) + search length
@@ -204,6 +210,41 @@ func (m RepoPickerModel) Selected() *gitlab.Project {
 // Filtered returns the currently filtered project list.
 func (m RepoPickerModel) Filtered() []*gitlab.Project {
 	return m.filtered
+}
+
+// KeyHints returns the keyboard hints for the repo picker screen.
+func (m RepoPickerModel) KeyHints() []KeyHint {
+	return []KeyHint{
+		{"[↑/↓]", "navigate"},
+		{"[Enter]", "select"},
+		{"[Esc]", "clear/quit"},
+		{"[type]", "filter"},
+	}
+}
+
+const repoPickerHeaderLines = 4 // title, blank, search, blank
+
+// visibleItems returns the number of items that fit in the content area.
+func (m RepoPickerModel) visibleItems() int {
+	if m.contentHeight <= repoPickerHeaderLines {
+		return len(m.filtered) // no constraint
+	}
+	v := m.contentHeight - repoPickerHeaderLines
+	if v < 1 {
+		v = 1
+	}
+	return v
+}
+
+// adjustScroll adjusts scrollOffset to keep the cursor visible.
+func (m *RepoPickerModel) adjustScroll() {
+	visible := m.visibleItems()
+	if m.cursor < m.scrollOffset {
+		m.scrollOffset = m.cursor
+	}
+	if m.cursor >= m.scrollOffset+visible {
+		m.scrollOffset = m.cursor - visible + 1
+	}
 }
 
 // filterProjects filters projects by case-insensitive substring match on PathWithNamespace.

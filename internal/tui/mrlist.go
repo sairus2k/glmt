@@ -11,14 +11,16 @@ import (
 
 // MRListModel is the bubbletea model for the MR list + selection screen.
 type MRListModel struct {
-	eligible     []*gitlab.MergeRequest
-	ineligible   []IneligibleMR
-	selected     map[int]bool // MR IID -> selected
-	cursor       int
-	repoPath     string
-	loading      bool
-	spinnerFrame int
-	errMsg       string
+	eligible      []*gitlab.MergeRequest
+	ineligible    []IneligibleMR
+	selected      map[int]bool // MR IID -> selected
+	cursor        int
+	repoPath      string
+	loading       bool
+	spinnerFrame  int
+	errMsg        string
+	contentHeight int
+	scrollOffset  int
 }
 
 // IneligibleMR pairs a merge request with the reason it cannot be selected.
@@ -157,11 +159,13 @@ func (m MRListModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
+			m.adjustScroll()
 		}
 
 	case "down", "j":
 		if m.cursor < total-1 {
 			m.cursor++
+			m.adjustScroll()
 		}
 
 	case "shift+up", "K":
@@ -231,6 +235,7 @@ func (m MRListModel) reorderUp() MRListModel {
 	// Swap with previous eligible MR.
 	m.eligible[m.cursor], m.eligible[m.cursor-1] = m.eligible[m.cursor-1], m.eligible[m.cursor]
 	m.cursor--
+	m.adjustScroll()
 	return m
 }
 
@@ -245,6 +250,7 @@ func (m MRListModel) reorderDown() MRListModel {
 	// Swap with next eligible MR.
 	m.eligible[m.cursor], m.eligible[m.cursor+1] = m.eligible[m.cursor+1], m.eligible[m.cursor]
 	m.cursor++
+	m.adjustScroll()
 	return m
 }
 
@@ -275,9 +281,6 @@ func (m MRListModel) View() tea.View {
 	if m.loading {
 		b.WriteString("  ")
 		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame] + " Loading merge requests..."))
-		b.WriteString("\n\n")
-		b.WriteString("  ")
-		b.WriteString(sFaint.Styled(sKey.Styled("[R]") + " refresh  " + sKey.Styled("[r]") + " change repo  " + sKey.Styled("[Esc]") + " quit"))
 		b.WriteString("\n")
 		return tea.NewView(b.String())
 	}
@@ -290,9 +293,6 @@ func (m MRListModel) View() tea.View {
 		} else {
 			b.WriteString(sFaint.Styled("No merge requests found."))
 		}
-		b.WriteString("\n\n")
-		b.WriteString("  ")
-		b.WriteString(sFaint.Styled(sKey.Styled("[R]") + " refresh  " + sKey.Styled("[r]") + " change repo  " + sKey.Styled("[Esc]") + " quit"))
 		b.WriteString("\n")
 		return tea.NewView(b.String())
 	}
@@ -306,48 +306,57 @@ func (m MRListModel) View() tea.View {
 	b.WriteString(sFaint.Styled(fmt.Sprintf(" / %d eligible", len(m.eligible))))
 	b.WriteString("\n\n")
 
-	// Render eligible MRs.
+	// Build all item lines, then render only the visible window.
+	type itemLine struct {
+		idx  int // global index (eligible + ineligible)
+		text string
+	}
+	var items []itemLine
+
 	for i, mr := range m.eligible {
+		var lb strings.Builder
 		if i == m.cursor {
-			b.WriteString(sCursor.Styled(">"))
+			lb.WriteString(sCursor.Styled(">"))
 		} else {
-			b.WriteString(" ")
+			lb.WriteString(" ")
 		}
-		b.WriteString(" ")
+		lb.WriteString(" ")
 		if m.selected[mr.IID] {
-			b.WriteString(sSelected.Styled("\u25cf")) // ●
+			lb.WriteString(sSelected.Styled("\u25cf")) // ●
 		} else {
-			b.WriteString(sFaint.Styled("\u25cb")) // ○
+			lb.WriteString(sFaint.Styled("\u25cb")) // ○
 		}
 		approvals := ""
 		if mr.ApprovalCount > 0 {
 			approvals = "  " + sSuccess.Styled(fmt.Sprintf("✓ %d", mr.ApprovalCount))
 		}
-		fmt.Fprintf(&b, " %s  %s  %s  %s%s\n",
+		fmt.Fprintf(&lb, " %s  %s  %s  %s%s",
 			sBold.Styled(fmt.Sprintf("!%d", mr.IID)),
 			mr.Title,
 			sFaint.Styled("@"+mr.Author),
 			sFaint.Styled(fmt.Sprintf("%d commits", mr.CommitCount)),
 			approvals)
+		items = append(items, itemLine{idx: i, text: lb.String()})
 	}
 
+	// Separator between eligible and ineligible.
 	if len(m.ineligible) > 0 && len(m.eligible) > 0 {
-		b.WriteString("\n")
+		items = append(items, itemLine{idx: -1, text: ""})
 	}
 
-	// Render ineligible MRs.
 	for i, imr := range m.ineligible {
+		var lb strings.Builder
 		idx := len(m.eligible) + i
 		if idx == m.cursor {
-			b.WriteString(sCursor.Styled(">"))
+			lb.WriteString(sCursor.Styled(">"))
 		} else {
-			b.WriteString(" ")
+			lb.WriteString(" ")
 		}
 		approvals := ""
 		if imr.MR.ApprovalCount > 0 {
 			approvals = "  " + sDim.Styled(fmt.Sprintf("✓ %d", imr.MR.ApprovalCount))
 		}
-		fmt.Fprintf(&b, " %s %s  %s  %s  %s%s  %s\n",
+		fmt.Fprintf(&lb, " %s %s  %s  %s  %s%s  %s",
 			sError.Styled("\u2717"),
 			sDim.Styled(fmt.Sprintf("!%d", imr.MR.IID)),
 			sDim.Styled(imr.MR.Title),
@@ -355,21 +364,70 @@ func (m MRListModel) View() tea.View {
 			sDim.Styled(fmt.Sprintf("%d commits", imr.MR.CommitCount)),
 			approvals,
 			sWarning.Styled(fmt.Sprintf("[%s]", imr.Reason)))
+		items = append(items, itemLine{idx: idx, text: lb.String()})
 	}
 
-	b.WriteString("\n")
-	b.WriteString("  ")
-	b.WriteString(sFaint.Styled(
-		sKey.Styled("[Space]") + " toggle  " +
-			sKey.Styled("[a]") + " all  " +
-			sKey.Styled("[Shift+\u2191\u2193]") + " reorder  " +
-			sKey.Styled("[R]") + " refresh  " +
-			sKey.Styled("[r]") + " change repo  " +
-			sKey.Styled("[Enter]") + " start  " +
-			sKey.Styled("[Esc]") + " quit"))
-	b.WriteString("\n")
+	// Render visible window.
+	visible := m.visibleItems()
+	end := m.scrollOffset + visible
+	if end > len(items) {
+		end = len(items)
+	}
+	start := m.scrollOffset
+	if start > len(items) {
+		start = len(items)
+	}
+	for i := start; i < end; i++ {
+		b.WriteString(items[i].text)
+		b.WriteString("\n")
+	}
 
 	return tea.NewView(b.String())
+}
+
+// KeyHints returns the keyboard hints for the current state.
+func (m MRListModel) KeyHints() []KeyHint {
+	if m.loading || m.totalCount() == 0 {
+		return []KeyHint{
+			{"[R]", "refresh"},
+			{"[r]", "change repo"},
+			{"[Esc]", "quit"},
+		}
+	}
+	return []KeyHint{
+		{"[Space]", "toggle"},
+		{"[a]", "all"},
+		{"[Shift+↑↓]", "reorder"},
+		{"[R]", "refresh"},
+		{"[r]", "change repo"},
+		{"[Enter]", "start"},
+		{"[Esc]", "quit"},
+	}
+}
+
+const mrListHeaderLines = 4 // repo, blank, section header, blank
+
+// visibleItems returns the number of items that fit in the content area.
+func (m MRListModel) visibleItems() int {
+	if m.contentHeight <= mrListHeaderLines {
+		return m.totalCount() + 1 // +1 for separator; no constraint
+	}
+	v := m.contentHeight - mrListHeaderLines
+	if v < 1 {
+		v = 1
+	}
+	return v
+}
+
+// adjustScroll adjusts scrollOffset to keep the cursor visible.
+func (m *MRListModel) adjustScroll() {
+	visible := m.visibleItems()
+	if m.cursor < m.scrollOffset {
+		m.scrollOffset = m.cursor
+	}
+	if m.cursor >= m.scrollOffset+visible {
+		m.scrollOffset = m.cursor - visible + 1
+	}
 }
 
 // Exported getters for testing.

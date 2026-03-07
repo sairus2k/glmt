@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
@@ -20,6 +21,32 @@ var (
 	sKey      = ansi.NewStyle(ansi.AttrBold)
 	sBold     = ansi.NewStyle(ansi.AttrBold)
 )
+
+// KeyHint represents a keyboard hint shown in the footer.
+type KeyHint struct {
+	Key  string // e.g. "[Space]", "[Enter]", "[Esc]"
+	Desc string // e.g. "toggle", "start", "quit"
+}
+
+// renderFooter renders the footer line with keyboard hints on the left and login status on the right.
+func renderFooter(hints []KeyHint, loginStatus string, width int) string {
+	var parts []string
+	for _, h := range hints {
+		parts = append(parts, sKey.Styled(h.Key)+" "+h.Desc)
+	}
+	left := "  " + sFaint.Styled(strings.Join(parts, "  "))
+	right := sFaint.Styled(loginStatus)
+
+	// Calculate visible widths (strip ANSI escape sequences)
+	leftLen := ansi.StringWidth(left)
+	rightLen := ansi.StringWidth(right)
+
+	gap := width - leftLen - rightLen
+	if gap < 2 {
+		gap = 2
+	}
+	return left + strings.Repeat(" ", gap) + right
+}
 
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 

@@ -264,13 +264,6 @@ func (m TrainRunModel) View() tea.View {
 		b.WriteString("\n")
 	}
 
-	// Footer
-	if !m.done {
-		b.WriteString("  ")
-		b.WriteString(sFaint.Styled(sKey.Styled("[Esc]") + " abort"))
-		b.WriteString("\n")
-	}
-
 	return tea.NewView(b.String())
 }
 
@@ -315,3 +308,11 @@ func (m TrainRunModel) MRSteps() []MRStepLog { return m.mrSteps }
 
 // Result returns the train execution result.
 func (m TrainRunModel) Result() *train.Result { return m.result }
+
+// KeyHints returns the keyboard hints for the train run screen.
+func (m TrainRunModel) KeyHints() []KeyHint {
+	if !m.done {
+		return []KeyHint{{"[Esc]", "abort"}}
+	}
+	return nil
+}

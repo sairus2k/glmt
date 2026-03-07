@@ -23,6 +23,11 @@ const (
 	ScreenTrainRun
 )
 
+// userLoadedMsg is sent when the current user has been fetched.
+type userLoadedMsg struct {
+	userName string
+}
+
 // AppModel is the top-level bubbletea model that coordinates screen transitions.
 type AppModel struct {
 	screen Screen
@@ -36,6 +41,10 @@ type AppModel struct {
 	cfg       *config.Config
 	cfgPath   string
 	projectID int
+
+	width    int
+	height   int
+	userName string
 
 	trainCancel context.CancelFunc
 }
@@ -87,17 +96,25 @@ func (m AppModel) Init() tea.Cmd {
 	case ScreenSetup:
 		return m.setup.Init()
 	case ScreenRepoPicker:
-		return tea.Batch(m.fetchProjects(), spinnerTick())
+		return tea.Batch(m.fetchProjects(), m.fetchCurrentUser(), spinnerTick())
 	case ScreenMRList:
-		return tea.Batch(m.fetchMRs(), spinnerTick())
+		return tea.Batch(m.fetchMRs(), m.fetchCurrentUser(), spinnerTick())
 	}
 	return nil
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg.(type) {
+	switch msg := msg.(type) {
 	case spinnerTickMsg:
-		return m.propagateSpinnerTick(msg)
+		return m.propagateSpinnerTick(tea.Msg(msg))
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.propagateContentHeight()
+		return m, nil
+	case userLoadedMsg:
+		m.userName = msg.userName
+		return m, nil
 	}
 
 	switch m.screen {
@@ -111,6 +128,31 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateTrainRun(msg)
 	}
 	return m, nil
+}
+
+func (m AppModel) contentHeight() int {
+	h := m.height - 5 // 3 header + 2 footer
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+func (m *AppModel) propagateContentHeight() {
+	ch := m.contentHeight()
+	m.repoPicker.contentHeight = ch
+	m.mrList.contentHeight = ch
+}
+
+func (m AppModel) loginStatus() string {
+	host := m.cfg.GitLab.Host
+	if m.userName != "" && host != "" {
+		return m.userName + " @ " + host
+	}
+	if host != "" {
+		return host
+	}
+	return ""
 }
 
 func (m AppModel) propagateSpinnerTick(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -137,24 +179,40 @@ func (m AppModel) propagateSpinnerTick(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m AppModel) View() tea.View {
 	var view tea.View
+	var hints []KeyHint
 	switch m.screen {
 	case ScreenSetup:
 		view = m.setup.View()
+		hints = m.setup.KeyHints()
 	case ScreenRepoPicker:
 		view = m.repoPicker.View()
+		hints = m.repoPicker.KeyHints()
 	case ScreenMRList:
 		view = m.mrList.View()
+		hints = m.mrList.KeyHints()
 	case ScreenTrainRun:
 		view = m.trainRun.View()
+		hints = m.trainRun.KeyHints()
 	default:
 		view = tea.NewView("")
 	}
 
-	// Prepend common header
+	// Header (3 lines)
 	header := "\n  " + sHeader.Styled("glmt") + "\n\n"
-	view.Content = header + view.Content
 
-	// Adjust cursor for the 3 prepended lines
+	// Pad content to fill available space
+	contentLines := strings.Count(view.Content, "\n")
+	available := m.contentHeight()
+	if pad := available - contentLines; pad > 0 {
+		view.Content += strings.Repeat("\n", pad)
+	}
+
+	// Footer (2 lines)
+	footer := "\n" + renderFooter(hints, m.loginStatus(), m.width)
+
+	view.Content = header + view.Content + footer
+
+	// Adjust cursor for the 3 prepended header lines
 	if view.Cursor != nil {
 		view.Cursor.Y += 3
 	}
@@ -177,10 +235,12 @@ func (m AppModel) updateSetup(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.client = c
 		m.cfg.GitLab.Host = m.setup.Host()
 		m.cfg.GitLab.Token = m.setup.Token()
+		m.userName = m.setup.UserName()
 		_ = config.Save(m.cfgPath, m.cfg)
 
 		m.screen = ScreenRepoPicker
 		m.repoPicker = NewRepoPickerModel(detectRepoFromGit())
+		m.propagateContentHeight()
 		return m, tea.Batch(m.fetchProjects(), spinnerTick())
 	}
 
@@ -201,6 +261,7 @@ func (m AppModel) updateRepoPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.screen = ScreenMRList
 		m.mrList = NewMRListModel(msg.project.PathWithNamespace)
+		m.propagateContentHeight()
 		return m, tea.Batch(m.fetchMRs(), spinnerTick())
 	}
 
@@ -215,6 +276,7 @@ func (m AppModel) updateMRList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		_ = msg
 		m.screen = ScreenRepoPicker
 		m.repoPicker = NewRepoPickerModel(detectRepoFromGit())
+		m.propagateContentHeight()
 		return m, tea.Batch(m.fetchProjects(), spinnerTick())
 	case refetchMRsMsg:
 		_ = msg
@@ -256,6 +318,20 @@ func (m AppModel) updateTrainRun(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // Commands
+
+func (m AppModel) fetchCurrentUser() tea.Cmd {
+	client := m.client
+	if client == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		user, err := client.GetCurrentUser(context.Background())
+		if err != nil || user == nil {
+			return userLoadedMsg{}
+		}
+		return userLoadedMsg{userName: user.Name}
+	}
+}
 
 func (m AppModel) fetchProjects() tea.Cmd {
 	client := m.client
