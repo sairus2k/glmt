@@ -1,0 +1,30 @@
+version: 2
+project_name: glmt
+
+builds:
+  - main: ./cmd/glmt/
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - format: tar.gz
+
+brews:
+  - repository:
+      owner: sairus2k
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/sairus2k/glmt"
+    description: "GitLab merge request tool"
+    license: "MIT"
+
+release:
+  github:
+    owner: sairus2k
+    name: glmt
