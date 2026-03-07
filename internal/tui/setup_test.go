@@ -325,3 +325,59 @@ func TestSetup_ValidationCommandError(t *testing.T) {
 	require.True(t, ok, "command should return credentialsInvalidMsg")
 	assert.EqualError(t, invalidMsg.err, "invalid token")
 }
+
+func TestSetup_GhostText(t *testing.T) {
+	t.Run("shows full suggestion when empty", func(t *testing.T) {
+		m := NewSetupModel()
+		assert.Equal(t, "gitlab.com", m.hostGhostText())
+	})
+
+	t.Run("shows remaining suffix for matching prefix", func(t *testing.T) {
+		m := NewSetupModel()
+		m.host = "git"
+		assert.Equal(t, "lab.com", m.hostGhostText())
+	})
+
+	t.Run("empty when input diverges", func(t *testing.T) {
+		m := NewSetupModel()
+		m.host = "https://"
+		assert.Equal(t, "", m.hostGhostText())
+	})
+
+	t.Run("empty when input equals suggestion", func(t *testing.T) {
+		m := NewSetupModel()
+		m.host = "gitlab.com"
+		assert.Equal(t, "", m.hostGhostText())
+	})
+
+	t.Run("right arrow at end accepts suggestion", func(t *testing.T) {
+		var m tea.Model = NewSetupModel()
+		m = typeString(t, m, "git")
+		m, _ = m.Update(specialKeyPress(tea.KeyRight))
+
+		sm := asSetup(t, m)
+		assert.Equal(t, "gitlab.com", sm.Host())
+		assert.Equal(t, len("gitlab.com"), sm.cursor)
+	})
+
+	t.Run("right arrow mid-input moves cursor", func(t *testing.T) {
+		var m tea.Model = NewSetupModel()
+		m = typeString(t, m, "git")
+		// Move cursor to start, then press right — should move cursor, not accept
+		m, _ = m.Update(specialKeyPress(tea.KeyHome))
+		m, _ = m.Update(specialKeyPress(tea.KeyRight))
+
+		sm := asSetup(t, m)
+		assert.Equal(t, "git", sm.Host())
+		assert.Equal(t, 1, sm.cursor)
+	})
+
+	t.Run("no ghost text after accepting", func(t *testing.T) {
+		var m tea.Model = NewSetupModel()
+		m, _ = m.Update(specialKeyPress(tea.KeyRight))
+
+		sm := asSetup(t, m)
+		assert.Equal(t, "gitlab.com", sm.Host())
+		assert.Equal(t, "", sm.hostGhostText())
+	})
+}

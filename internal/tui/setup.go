@@ -7,6 +7,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+const hostSuggestion = "gitlab.com"
+
 // SetupState represents the current state of the setup screen.
 type SetupState int
 
@@ -149,6 +151,9 @@ func (m SetupModel) handleHostInput(msg tea.KeyPressMsg, key string) (tea.Model,
 	case "right":
 		if m.cursor < len(m.host) {
 			m.cursor++
+		} else if m.hostGhostText() != "" {
+			m.host = hostSuggestion
+			m.cursor = len(m.host)
 		}
 		return m, nil
 	case "home", "ctrl+a":
@@ -218,6 +223,15 @@ func (m SetupModel) handleTokenInput(msg tea.KeyPressMsg, key string) (tea.Model
 	}
 }
 
+// hostGhostText returns the remaining suffix of hostSuggestion if the current
+// host input is a prefix of it. Returns empty string otherwise.
+func (m SetupModel) hostGhostText() string {
+	if strings.HasPrefix(hostSuggestion, m.host) && m.host != hostSuggestion {
+		return hostSuggestion[len(m.host):]
+	}
+	return ""
+}
+
 func (m SetupModel) validateCmd() tea.Cmd {
 	host := m.host
 	token := m.token
@@ -263,6 +277,9 @@ func (m SetupModel) View() tea.View {
 		b.WriteString(sBold.Styled("GitLab host:"))
 		b.WriteString(" ")
 		b.WriteString(m.host)
+		if ghost := m.hostGhostText(); ghost != "" {
+			b.WriteString(sFaint.Styled(ghost))
+		}
 		b.WriteString("\n")
 
 		// Cursor after host text: "  GitLab host: " is col 15 + cursor pos
@@ -357,7 +374,11 @@ func (m SetupModel) Err() error { return m.err }
 func (m SetupModel) KeyHints() []KeyHint {
 	switch m.state {
 	case SetupStateHost:
-		return []KeyHint{{"[Enter]", "continue"}, {"[Esc]", "quit"}}
+		hints := []KeyHint{{"[Enter]", "continue"}, {"[Esc]", "quit"}}
+		if m.hostGhostText() != "" {
+			hints = append(hints, KeyHint{"[→]", "accept"})
+		}
+		return hints
 	case SetupStateToken:
 		return []KeyHint{{"[Enter]", "validate"}, {"[Esc]", "back"}}
 	case SetupStateError:
