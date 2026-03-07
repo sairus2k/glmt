@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/emdash-ai/glmt/internal/gitlab"
+	"github.com/sairus2k/glmt/internal/gitlab"
 )
 
 // projectsLoadedMsg is sent when the project list has been fetched from GitLab.
@@ -150,7 +150,7 @@ func (m RepoPickerModel) View() tea.View {
 	b.WriteString("\n\n")
 
 	if len(m.projects) == 0 {
-		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame]+" Loading projects..."))
+		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame] + " Loading projects..."))
 		b.WriteString("\n")
 	} else if len(m.filtered) == 0 {
 		b.WriteString(sFaint.Styled("No matching projects."))
@@ -169,7 +169,7 @@ func (m RepoPickerModel) View() tea.View {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(sFaint.Styled(sKey.Styled("[j/k]")+" navigate  "+sKey.Styled("[enter]")+" select  "+sKey.Styled("[esc]")+" clear search  "+sKey.Styled("[type]")+" filter"))
+	b.WriteString(sFaint.Styled(sKey.Styled("[j/k]") + " navigate  " + sKey.Styled("[enter]") + " select  " + sKey.Styled("[esc]") + " clear search  " + sKey.Styled("[type]") + " filter"))
 
 	view := tea.NewView(b.String())
 	// Cursor after "Search: " (col 8) + search length

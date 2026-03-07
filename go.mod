@@ -1,4 +1,4 @@
-module github.com/emdash-ai/glmt
+module github.com/sairus2k/glmt
 
 go 1.26.1
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/emdash-ai/glmt/internal/gitlab"
+	"github.com/sairus2k/glmt/internal/gitlab"
 )
 
 // MRListModel is the bubbletea model for the MR list + selection screen.
@@ -266,10 +266,10 @@ func (m MRListModel) View() tea.View {
 
 	if m.loading {
 		b.WriteString("  ")
-		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame]+" Loading merge requests..."))
+		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame] + " Loading merge requests..."))
 		b.WriteString("\n\n")
 		b.WriteString("  ")
-		b.WriteString(sFaint.Styled(sKey.Styled("[R]")+" refresh  "+sKey.Styled("[r]")+" change repo  "+sKey.Styled("[q]")+" quit"))
+		b.WriteString(sFaint.Styled(sKey.Styled("[R]") + " refresh  " + sKey.Styled("[r]") + " change repo  " + sKey.Styled("[q]") + " quit"))
 		b.WriteString("\n")
 		return tea.NewView(b.String())
 	}
@@ -280,7 +280,7 @@ func (m MRListModel) View() tea.View {
 		b.WriteString(sFaint.Styled("No merge requests found."))
 		b.WriteString("\n\n")
 		b.WriteString("  ")
-		b.WriteString(sFaint.Styled(sKey.Styled("[R]")+" refresh  "+sKey.Styled("[r]")+" change repo  "+sKey.Styled("[q]")+" quit"))
+		b.WriteString(sFaint.Styled(sKey.Styled("[R]") + " refresh  " + sKey.Styled("[r]") + " change repo  " + sKey.Styled("[q]") + " quit"))
 		b.WriteString("\n")
 		return tea.NewView(b.String())
 	}
@@ -334,12 +334,12 @@ func (m MRListModel) View() tea.View {
 	b.WriteString("\n")
 	b.WriteString("  ")
 	b.WriteString(sFaint.Styled(
-		sKey.Styled("[Space]")+" toggle  "+
-			sKey.Styled("[a]")+" all  "+
-			sKey.Styled("[Shift+\u2191\u2193]")+" reorder  "+
-			sKey.Styled("[R]")+" refresh  "+
-			sKey.Styled("[Enter]")+" start  "+
-			sKey.Styled("[q]")+" quit"))
+		sKey.Styled("[Space]") + " toggle  " +
+			sKey.Styled("[a]") + " all  " +
+			sKey.Styled("[Shift+\u2191\u2193]") + " reorder  " +
+			sKey.Styled("[R]") + " refresh  " +
+			sKey.Styled("[Enter]") + " start  " +
+			sKey.Styled("[q]") + " quit"))
 	b.WriteString("\n")
 
 	return tea.NewView(b.String())

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/emdash-ai/glmt/internal/gitlab"
+	"github.com/sairus2k/glmt/internal/gitlab"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -57,9 +57,9 @@ func TestRunnerRun(t *testing.T) {
 				// GetMergeRequest returns MR with SHA
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{
-						IID:          mrIID,
-						SHA:          fmt.Sprintf("sha-%d", mrIID),
-						TargetBranch: "main",
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
@@ -115,9 +115,9 @@ func TestRunnerRun(t *testing.T) {
 			setup: func(m *MockClient) {
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{
-						IID:          mrIID,
-						SHA:          fmt.Sprintf("sha-%d", mrIID),
-						TargetBranch: "main",
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
@@ -175,9 +175,9 @@ func TestRunnerRun(t *testing.T) {
 			setup: func(m *MockClient) {
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{
-						IID:          mrIID,
-						SHA:          fmt.Sprintf("sha-%d", mrIID),
-						TargetBranch: "main",
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
@@ -240,9 +240,9 @@ func TestRunnerRun(t *testing.T) {
 				mergeCallCount := 0
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{
-						IID:          mrIID,
-						SHA:          fmt.Sprintf("sha-%d-v2", mrIID),
-						TargetBranch: "main",
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d-v2", mrIID),
+						TargetBranch:        "main",
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
@@ -286,9 +286,9 @@ func TestRunnerRun(t *testing.T) {
 			setup: func(m *MockClient) {
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{
-						IID:          mrIID,
-						SHA:          fmt.Sprintf("sha-%d", mrIID),
-						TargetBranch: "main",
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
@@ -328,9 +328,9 @@ func TestRunnerRun(t *testing.T) {
 				}
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{
-						IID:          mrIID,
-						SHA:          fmt.Sprintf("sha-%d", mrIID),
-						TargetBranch: "main",
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
@@ -417,9 +417,9 @@ func TestRunnerRun(t *testing.T) {
 			setup: func(m *MockClient) {
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{
-						IID:          mrIID,
-						SHA:          fmt.Sprintf("sha-%d", mrIID),
-						TargetBranch: "main",
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
@@ -460,9 +460,9 @@ func TestRunnerRun(t *testing.T) {
 				}
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{
-						IID:          mrIID,
-						SHA:          fmt.Sprintf("sha-%d", mrIID),
-						TargetBranch: "main",
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
@@ -520,9 +520,9 @@ func TestRunnerRun(t *testing.T) {
 			setup: func(m *MockClient) {
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{
-						IID:          mrIID,
-						SHA:          fmt.Sprintf("sha-%d", mrIID),
-						TargetBranch: "main",
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
@@ -549,9 +549,9 @@ func TestRunnerRun(t *testing.T) {
 			setup: func(m *MockClient) {
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{
-						IID:          mrIID,
-						SHA:          fmt.Sprintf("sha-%d", mrIID),
-						TargetBranch: "main",
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
@@ -606,9 +606,9 @@ func TestRunnerRun(t *testing.T) {
 			setup: func(m *MockClient) {
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{
-						IID:          mrIID,
-						SHA:          fmt.Sprintf("sha-%d", mrIID),
-						TargetBranch: "main",
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}

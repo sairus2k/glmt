@@ -3,7 +3,7 @@ package train
 import (
 	"context"
 
-	"github.com/emdash-ai/glmt/internal/gitlab"
+	"github.com/sairus2k/glmt/internal/gitlab"
 )
 
 // MockCall records a single method call made to the MockClient.

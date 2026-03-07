@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/emdash-ai/glmt/internal/auth"
-	"github.com/emdash-ai/glmt/internal/config"
-	"github.com/emdash-ai/glmt/internal/gitlab"
-	"github.com/emdash-ai/glmt/internal/train"
-	"github.com/emdash-ai/glmt/internal/tui"
+	"github.com/sairus2k/glmt/internal/auth"
+	"github.com/sairus2k/glmt/internal/config"
+	"github.com/sairus2k/glmt/internal/gitlab"
+	"github.com/sairus2k/glmt/internal/train"
+	"github.com/sairus2k/glmt/internal/tui"
 )
 
 func main() {

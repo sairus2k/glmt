@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/emdash-ai/glmt/internal/auth"
-	"github.com/emdash-ai/glmt/internal/config"
+	"github.com/sairus2k/glmt/internal/auth"
+	"github.com/sairus2k/glmt/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/emdash-ai/glmt/internal/gitlab"
+	"github.com/sairus2k/glmt/internal/gitlab"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -222,9 +222,9 @@ func TestMRList_StartTrain(t *testing.T) {
 	m := loadModel(allFixtureMRs())
 
 	// Select both MRs.
-	m = sendKey(m, " ")       // Select MR 42.
-	m = sendKey(m, "down")    // Move to MR 38.
-	m = sendKey(m, " ")       // Select MR 38.
+	m = sendKey(m, " ")    // Select MR 42.
+	m = sendKey(m, "down") // Move to MR 38.
+	m = sendKey(m, " ")    // Select MR 38.
 
 	// Press Enter.
 	_, cmd := sendKeyCmd(m, "enter")

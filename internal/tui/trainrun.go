@@ -6,8 +6,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/emdash-ai/glmt/internal/gitlab"
-	"github.com/emdash-ai/glmt/internal/train"
+	"github.com/sairus2k/glmt/internal/gitlab"
+	"github.com/sairus2k/glmt/internal/train"
 )
 
 // StepStatus represents the status of a single step in the train run.
@@ -298,7 +298,6 @@ func formatDuration(d time.Duration) string {
 	}
 	return fmt.Sprintf("%ds", s)
 }
-
 
 // Exported getters for testing.
 

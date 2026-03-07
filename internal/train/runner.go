@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/emdash-ai/glmt/internal/gitlab"
+	"github.com/sairus2k/glmt/internal/gitlab"
 )
 
 // MRStatus represents the outcome of processing a single MR.
