@@ -13,9 +13,10 @@ builds:
       - arm64
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
 
-brews:
+homebrew_casks:
   - repository:
       owner: sairus2k
       name: homebrew-tap
