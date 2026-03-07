@@ -1,4 +1,4 @@
-# glmt
+# `glmt` — GitLab Merge Train CLI
 
 A local interactive TUI that merges a sequence of GitLab MRs one by one.
 
