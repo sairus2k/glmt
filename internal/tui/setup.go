@@ -235,6 +235,15 @@ func (m SetupModel) validateCmd() tea.Cmd {
 	}
 }
 
+func tokenCreationURL(host string) string {
+	h := host
+	for _, prefix := range []string{"https://", "http://", "https//", "http//"} {
+		h = strings.TrimPrefix(h, prefix)
+	}
+	h = strings.TrimRight(h, "/")
+	return "https://" + h + "/-/user_settings/personal_access_tokens?name=glmt&scopes=api"
+}
+
 // View renders the setup screen.
 func (m SetupModel) View() tea.View {
 	var b strings.Builder
@@ -267,20 +276,26 @@ func (m SetupModel) View() tea.View {
 		b.WriteString(m.host)
 		b.WriteString("\n")
 		b.WriteString("  ")
+		b.WriteString(sFaint.Styled("Create one: " + tokenCreationURL(m.host)))
+		b.WriteString("\n")
+		b.WriteString("  ")
 		b.WriteString(sBold.Styled("Personal access token (api scope):"))
 		b.WriteString(" ")
 		b.WriteString(strings.Repeat("*", len(m.token)))
 		b.WriteString("\n")
 
 		// Cursor after token text: "  Personal access token (api scope): " is col 37 + cursor pos
-		// Lines: 0=title, 1=description, 2=blank, 3=host, 4=token input
+		// Lines: 0=title, 1=description, 2=blank, 3=host, 4=create hint, 5=token input
 		view = tea.NewView(b.String())
-		view.Cursor = tea.NewCursor(37+m.cursor, 4)
+		view.Cursor = tea.NewCursor(37+m.cursor, 5)
 	case SetupStateValidating:
 		b.WriteString("  ")
 		b.WriteString(sBold.Styled("GitLab host:"))
 		b.WriteString(" ")
 		b.WriteString(m.host)
+		b.WriteString("\n")
+		b.WriteString("  ")
+		b.WriteString(sFaint.Styled("Create one: " + tokenCreationURL(m.host)))
 		b.WriteString("\n")
 		b.WriteString("  ")
 		b.WriteString(sBold.Styled("Personal access token (api scope):"))

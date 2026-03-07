@@ -212,6 +212,30 @@ func TestSetup_ViewShowsAsterisks(t *testing.T) {
 	assert.NotContains(t, viewStr, "secret-token")
 }
 
+func TestSetup_ViewShowsTokenCreationLink(t *testing.T) {
+	tests := []struct {
+		name     string
+		host     string
+		wantURL  string
+	}{
+		{"bare host", "gitlab.example.com", "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=glmt&scopes=api"},
+		{"with https", "https://gitlab.example.com", "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=glmt&scopes=api"},
+		{"with http", "http://gitlab.example.com", "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=glmt&scopes=api"},
+		{"trailing slash", "gitlab.example.com/", "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=glmt&scopes=api"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var m tea.Model = NewSetupModel()
+			m = typeString(t, m, tt.host)
+			m, _ = m.Update(specialKeyPress(tea.KeyEnter))
+
+			sm := asSetup(t, m)
+			view := sm.View()
+			assert.Contains(t, view.Content, tt.wantURL)
+		})
+	}
+}
+
 func TestSetup_ErrorRetry(t *testing.T) {
 	var m tea.Model = NewSetupModel()
 	m, _ = m.Update(credentialsInvalidMsg{err: fmt.Errorf("connection refused")})
