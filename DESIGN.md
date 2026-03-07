@@ -210,7 +210,7 @@ For each MR in FIFO (oldest-first) order:
 3. MERGE (with SHA guard)
    PUT /projects/:id/merge_requests/:iid/merge
      sha=<head_pipeline.sha>          ← abort if branch moved under us
-     should_remove_source_branch=true
+     (source branch deletion is handled by GitLab project settings)
    → on 409 (SHA mismatch): rebase and retry from step 1 (once only)
    → on 405 / other error: log, mark SKIPPED, continue
 
@@ -278,7 +278,6 @@ repo = "myteam/myrepo"        # last-used project path
 [behavior]
 poll_rebase_interval_s = 2
 poll_pipeline_interval_s = 10
-remove_source_branch = true
 ```
 
 ---

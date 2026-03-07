@@ -143,7 +143,6 @@ func TestMergeMergeRequest_Success(t *testing.T) {
 		err := json.NewDecoder(r.Body).Decode(&body)
 		require.NoError(t, err)
 		assert.Equal(t, "abc123", body["sha"])
-		assert.Equal(t, true, body["should_remove_source_branch"])
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprint(w, `{

@@ -49,7 +49,6 @@ repo = "myteam/myrepo"          # last-used project path
 [behavior]
 poll_rebase_interval_s = 2      # how often to check rebase status
 poll_pipeline_interval_s = 10   # how often to check pipeline status
-remove_source_branch = true     # delete source branch after merge
 ```
 
 ## How it works

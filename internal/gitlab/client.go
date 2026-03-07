@@ -142,8 +142,7 @@ func (c *APIClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int
 // MergeMergeRequest merges the MR with a SHA guard.
 func (c *APIClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) error {
 	opts := &goGitLab.AcceptMergeRequestOptions{
-		SHA:                      goGitLab.Ptr(sha),
-		ShouldRemoveSourceBranch: goGitLab.Ptr(true),
+		SHA: goGitLab.Ptr(sha),
 	}
 
 	_, _, err := c.client.MergeRequests.AcceptMergeRequest(int64(projectID), int64(mrIID), opts, goGitLab.WithContext(ctx))

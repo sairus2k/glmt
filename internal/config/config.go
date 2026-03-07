@@ -28,9 +28,8 @@ type DefaultsConfig struct {
 
 // BehaviorConfig holds behavioral settings.
 type BehaviorConfig struct {
-	PollRebaseIntervalS   int  `toml:"poll_rebase_interval_s"`
-	PollPipelineIntervalS int  `toml:"poll_pipeline_interval_s"`
-	RemoveSourceBranch    bool `toml:"remove_source_branch"`
+	PollRebaseIntervalS   int `toml:"poll_rebase_interval_s"`
+	PollPipelineIntervalS int `toml:"poll_pipeline_interval_s"`
 }
 
 // DefaultConfig returns the config with sensible defaults.
@@ -39,7 +38,6 @@ func DefaultConfig() *Config {
 		Behavior: BehaviorConfig{
 			PollRebaseIntervalS:   2,
 			PollPipelineIntervalS: 10,
-			RemoveSourceBranch:    true,
 		},
 	}
 }
