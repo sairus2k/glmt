@@ -12,10 +12,19 @@ branch and waiting for CI — is a tedious manual process.
 merge in order. No server, no labels, no webhooks. Close the terminal when it
 is done.
 
-## Quick start
+## Install
+
+### Homebrew
 
 ```
-go install github.com/emdash-ai/glmt/cmd/glmt@latest
+brew tap sairus2k/tap
+brew install glmt
+```
+
+### Go
+
+```
+go install github.com/sairus2k/glmt/cmd/glmt@latest
 ```
 
 `glmt` reads credentials from the [glab CLI](https://gitlab.com/gitlab-org/cli)
