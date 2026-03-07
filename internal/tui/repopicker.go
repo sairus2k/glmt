@@ -19,12 +19,13 @@ type repoSelectedMsg struct {
 
 // RepoPickerModel is a bubbletea model for the repo picker screen.
 type RepoPickerModel struct {
-	projects   []*gitlab.Project
-	filtered   []*gitlab.Project
-	cursor     int
-	search     string
-	selected   *gitlab.Project
-	autoDetect string // pre-detected project path
+	projects     []*gitlab.Project
+	filtered     []*gitlab.Project
+	cursor       int
+	search       string
+	selected     *gitlab.Project
+	autoDetect   string // pre-detected project path
+	spinnerFrame int
 }
 
 // NewRepoPickerModel creates a new RepoPickerModel with an optional auto-detected project path.
@@ -42,6 +43,12 @@ func (m RepoPickerModel) Init() tea.Cmd {
 // Update handles messages and updates the model state.
 func (m RepoPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case spinnerTickMsg:
+		if len(m.projects) == 0 {
+			m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
+			return m, spinnerTick()
+		}
+		return m, nil
 	case projectsLoadedMsg:
 		m.projects = msg.projects
 		m.filtered = filterProjects(m.projects, m.search)
@@ -132,31 +139,43 @@ func (m RepoPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m RepoPickerModel) View() tea.View {
 	var b strings.Builder
 
-	b.WriteString("Select a repository\n\n")
+	b.WriteString(sHeader.Styled("Select a repository"))
+	b.WriteString("\n\n")
 
 	if m.search != "" {
-		b.WriteString("Search: " + m.search + "\n\n")
+		b.WriteString(sBold.Styled("Search:") + " " + m.search)
 	} else {
-		b.WriteString("Search: (type to filter)\n\n")
+		b.WriteString(sBold.Styled("Search:") + " " + sFaint.Styled("(type to filter)"))
 	}
+	b.WriteString("\n\n")
 
 	if len(m.projects) == 0 {
-		b.WriteString("Loading projects...\n")
+		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame]+" Loading projects..."))
+		b.WriteString("\n")
 	} else if len(m.filtered) == 0 {
-		b.WriteString("No matching projects.\n")
+		b.WriteString(sFaint.Styled("No matching projects."))
+		b.WriteString("\n")
 	} else {
 		for i, p := range m.filtered {
-			cursor := "  "
 			if i == m.cursor {
-				cursor = "> "
+				b.WriteString(sCursor.Styled("> "))
+				b.WriteString(sSelected.Styled(p.PathWithNamespace))
+			} else {
+				b.WriteString("  ")
+				b.WriteString(p.PathWithNamespace)
 			}
-			b.WriteString(cursor + p.PathWithNamespace + "\n")
+			b.WriteString("\n")
 		}
 	}
 
-	b.WriteString("\n[j/k] navigate  [enter] select  [esc] clear search  [type] filter")
+	b.WriteString("\n")
+	b.WriteString(sFaint.Styled(sKey.Styled("[j/k]")+" navigate  "+sKey.Styled("[enter]")+" select  "+sKey.Styled("[esc]")+" clear search  "+sKey.Styled("[type]")+" filter"))
 
-	return tea.NewView(b.String())
+	view := tea.NewView(b.String())
+	// Cursor after "Search: " (col 8) + search length
+	searchCol := 8 + len(m.search)
+	view.Cursor = tea.NewCursor(searchCol, 2)
+	return view
 }
 
 // Cursor returns the current cursor position.

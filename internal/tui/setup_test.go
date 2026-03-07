@@ -228,6 +228,36 @@ func TestSetup_ErrorRetry(t *testing.T) {
 	assert.Nil(t, sm.Err())
 }
 
+// executeBatchCmd runs a command and, if it returns a BatchMsg, collects all
+// messages by executing each sub-command. Returns all collected messages.
+func executeBatchCmd(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		var msgs []tea.Msg
+		for _, c := range batch {
+			if c != nil {
+				msgs = append(msgs, c())
+			}
+		}
+		return msgs
+	}
+	return []tea.Msg{msg}
+}
+
+// findMsg searches a message slice for a message of type T.
+func findMsg[T any](msgs []tea.Msg) (T, bool) {
+	for _, msg := range msgs {
+		if m, ok := msg.(T); ok {
+			return m, true
+		}
+	}
+	var zero T
+	return zero, false
+}
+
 func TestSetup_ValidationCommand(t *testing.T) {
 	sm := NewSetupModel()
 	sm.ValidateFn = func(host, token string) (string, error) {
@@ -245,8 +275,8 @@ func TestSetup_ValidationCommand(t *testing.T) {
 	_, cmd = m.Update(specialKeyPress(tea.KeyEnter))
 	require.NotNil(t, cmd)
 
-	msg := cmd()
-	validMsg, ok := msg.(credentialsValidMsg)
+	msgs := executeBatchCmd(cmd)
+	validMsg, ok := findMsg[credentialsValidMsg](msgs)
 	require.True(t, ok, "command should return credentialsValidMsg")
 	assert.Equal(t, "Test User", validMsg.userName)
 }
@@ -266,8 +296,8 @@ func TestSetup_ValidationCommandError(t *testing.T) {
 	_, cmd = m.Update(specialKeyPress(tea.KeyEnter))
 	require.NotNil(t, cmd)
 
-	msg := cmd()
-	invalidMsg, ok := msg.(credentialsInvalidMsg)
+	msgs := executeBatchCmd(cmd)
+	invalidMsg, ok := findMsg[credentialsInvalidMsg](msgs)
 	require.True(t, ok, "command should return credentialsInvalidMsg")
 	assert.EqualError(t, invalidMsg.err, "invalid token")
 }

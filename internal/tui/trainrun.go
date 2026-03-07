@@ -37,13 +37,14 @@ type MRStepLog struct {
 // TrainRunModel is the bubbletea model for the train run screen.
 // It shows live progress of the merge train execution.
 type TrainRunModel struct {
-	mrs       []*gitlab.MergeRequest
-	mrSteps   []MRStepLog
-	currentMR int
-	done      bool
-	aborted   bool
-	result    *train.Result
-	startTime time.Time
+	mrs          []*gitlab.MergeRequest
+	mrSteps      []MRStepLog
+	currentMR    int
+	done         bool
+	aborted      bool
+	result       *train.Result
+	startTime    time.Time
+	spinnerFrame int
 }
 
 // Messages used by the train run screen.
@@ -82,6 +83,12 @@ func (m TrainRunModel) Init() tea.Cmd {
 // Update handles messages and updates model state.
 func (m TrainRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case spinnerTickMsg:
+		if !m.done {
+			m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
+			return m, spinnerTick()
+		}
+		return m, nil
 	case tea.KeyPressMsg:
 		return m.handleKeyPress(msg)
 	case trainStepMsg:
@@ -186,15 +193,23 @@ func (m TrainRunModel) View() tea.View {
 	// Header
 	total := len(m.mrs)
 	if m.done {
-		fmt.Fprintf(&b, "\n  Finished processing %d MRs\n\n", total)
+		b.WriteString("\n  ")
+		b.WriteString(sSuccess.Styled(fmt.Sprintf("✓ Finished processing %d MRs", total)))
+		b.WriteString("\n\n")
 	} else if m.aborted {
-		fmt.Fprintf(&b, "\n  Aborted — processed %d of %d MRs\n\n", m.currentMR, total)
+		b.WriteString("\n  ")
+		b.WriteString(sError.Styled(fmt.Sprintf("✗ Aborted — processed %d of %d MRs", m.currentMR, total)))
+		b.WriteString("\n\n")
 	} else {
 		currentIID := 0
 		if m.currentMR < len(m.mrs) {
 			currentIID = m.mrs[m.currentMR].IID
 		}
-		fmt.Fprintf(&b, "\n  Merging %d of %d MRs · !%d in progress\n\n", m.currentMR+1, total, currentIID)
+		b.WriteString("\n  ")
+		b.WriteString(sHeader.Styled(fmt.Sprintf("Merging %d of %d MRs", m.currentMR+1, total)))
+		b.WriteString(" · ")
+		b.WriteString(sRunning.Styled(fmt.Sprintf("!%d in progress", currentIID)))
+		b.WriteString("\n\n")
 	}
 
 	// Per-MR blocks
@@ -209,11 +224,15 @@ func (m TrainRunModel) View() tea.View {
 		}
 
 		// MR header line
+		b.WriteString("  ")
+		b.WriteString(sBold.Styled(fmt.Sprintf("!%d", mr.IID)))
+		b.WriteString("  ")
+		b.WriteString(mr.Title)
 		if isSkipped {
-			fmt.Fprintf(&b, "  !%d  %s  SKIPPED\n", mr.IID, mr.Title)
-		} else {
-			fmt.Fprintf(&b, "  !%d  %s\n", mr.IID, mr.Title)
+			b.WriteString("  ")
+			b.WriteString(sWarning.Styled("SKIPPED"))
 		}
+		b.WriteString("\n")
 
 		// Step lines
 		for j, step := range steps {
@@ -223,13 +242,23 @@ func (m TrainRunModel) View() tea.View {
 				connector = "└─"
 			}
 
-			icon := stepIcon(step.Status)
+			icon := m.styledStepIcon(step.Status)
 
-			if step.Message != "" {
-				fmt.Fprintf(&b, "  %s %s %s    %s\n", connector, icon, step.Name, step.Message)
-			} else {
-				fmt.Fprintf(&b, "  %s %s %s\n", connector, icon, step.Name)
+			b.WriteString("  ")
+			b.WriteString(sDim.Styled(connector))
+			b.WriteString(" ")
+			b.WriteString(icon)
+			b.WriteString(" ")
+			b.WriteString(step.Name)
+			if step.Status == StepRunning && !step.StartedAt.IsZero() {
+				b.WriteString("  ")
+				b.WriteString(sFaint.Styled(formatDuration(time.Since(step.StartedAt))))
 			}
+			if step.Message != "" {
+				b.WriteString("    ")
+				b.WriteString(sFaint.Styled(step.Message))
+			}
+			b.WriteString("\n")
 		}
 
 		b.WriteString("\n")
@@ -237,26 +266,39 @@ func (m TrainRunModel) View() tea.View {
 
 	// Footer
 	if !m.done {
-		b.WriteString("  [q] abort\n")
+		b.WriteString("  ")
+		b.WriteString(sFaint.Styled(sKey.Styled("[q]") + " abort"))
+		b.WriteString("\n")
 	}
 
 	return tea.NewView(b.String())
 }
 
-func stepIcon(status StepStatus) string {
+func (m TrainRunModel) styledStepIcon(status StepStatus) string {
 	switch status {
 	case StepDone:
-		return "✓"
+		return sSuccess.Styled("✓")
 	case StepRunning:
-		return "…"
+		return sRunning.Styled(spinnerFrames[m.spinnerFrame])
 	case StepFailed:
-		return "✗"
+		return sError.Styled("✗")
 	case StepSkipped:
-		return "⚠"
+		return sWarning.Styled("⚠")
 	default:
 		return " "
 	}
 }
+
+func formatDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	m := int(d.Minutes())
+	s := int(d.Seconds()) % 60
+	if m > 0 {
+		return fmt.Sprintf("%dm%02ds", m, s)
+	}
+	return fmt.Sprintf("%ds", s)
+}
+
 
 // Exported getters for testing.
 

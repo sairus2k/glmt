@@ -21,12 +21,13 @@ const (
 // SetupModel is the bubbletea model for the first-run setup screen.
 // It collects GitLab credentials and validates them.
 type SetupModel struct {
-	state    SetupState
-	host     string
-	token    string
-	userName string // set after successful validation
-	err      error
-	cursor   int // cursor position in current input
+	state        SetupState
+	host         string
+	token        string
+	userName     string // set after successful validation
+	err          error
+	cursor       int // cursor position in current input
+	spinnerFrame int
 
 	// ValidateFn is a configurable function for credential validation.
 	// It receives host and token and returns the authenticated user's name or an error.
@@ -59,6 +60,12 @@ func (m SetupModel) Init() tea.Cmd {
 // Update handles messages and updates model state.
 func (m SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case spinnerTickMsg:
+		if m.state == SetupStateValidating {
+			m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
+			return m, spinnerTick()
+		}
+		return m, nil
 	case tea.KeyPressMsg:
 		return m.handleKeyPress(msg)
 	case tea.PasteMsg:
@@ -167,7 +174,7 @@ func (m SetupModel) handleTokenInput(msg tea.KeyPressMsg, key string) (tea.Model
 	case "enter":
 		if m.token != "" {
 			m.state = SetupStateValidating
-			return m, m.validateCmd()
+			return m, tea.Batch(m.validateCmd(), spinnerTick())
 		}
 		return m, nil
 	case "backspace":
@@ -232,45 +239,95 @@ func (m SetupModel) validateCmd() tea.Cmd {
 func (m SetupModel) View() tea.View {
 	var b strings.Builder
 
-	b.WriteString("\n  glmt - GitLab Merge Train CLI\n\n")
-	b.WriteString("  First-run setup\n\n")
+	b.WriteString("\n  ")
+	b.WriteString(sHeader.Styled("glmt - GitLab Merge Train CLI"))
+	b.WriteString("\n\n")
+	b.WriteString("  ")
+	b.WriteString(sFaint.Styled("First-run setup"))
+	b.WriteString("\n\n")
+
+	var view tea.View
 
 	switch m.state {
 	case SetupStateHost:
-		b.WriteString("  GitLab host: ")
+		b.WriteString("  ")
+		b.WriteString(sBold.Styled("GitLab host:"))
+		b.WriteString(" ")
 		b.WriteString(m.host)
-		b.WriteString("_\n")
-		b.WriteString("\n  Press Enter to continue. Press Escape to quit.\n")
+		b.WriteString("\n")
+		b.WriteString("\n  ")
+		b.WriteString(sFaint.Styled(sKey.Styled("Enter")+" to continue. "+sKey.Styled("Escape")+" to quit."))
+		b.WriteString("\n")
+
+		// Cursor after host text: "  GitLab host: " is col 15 + cursor pos
+		// Lines: 0=blank, 1=header, 2=blank, 3=subtitle, 4=blank, 5=host input
+		view = tea.NewView(b.String())
+		view.Cursor = tea.NewCursor(15+m.cursor, 5)
 	case SetupStateToken:
-		b.WriteString("  GitLab host: ")
+		b.WriteString("  ")
+		b.WriteString(sBold.Styled("GitLab host:"))
+		b.WriteString(" ")
 		b.WriteString(m.host)
 		b.WriteString("\n")
-		b.WriteString("  Personal access token (api scope): ")
+		b.WriteString("  ")
+		b.WriteString(sBold.Styled("Personal access token (api scope):"))
+		b.WriteString(" ")
 		b.WriteString(strings.Repeat("*", len(m.token)))
-		b.WriteString("_\n")
-		b.WriteString("\n  Press Enter to validate. Press Escape to go back.\n")
+		b.WriteString("\n")
+		b.WriteString("\n  ")
+		b.WriteString(sFaint.Styled(sKey.Styled("Enter")+" to validate. "+sKey.Styled("Escape")+" to go back."))
+		b.WriteString("\n")
+
+		// Cursor after token text: "  Personal access token (api scope): " is col 37 + cursor pos
+		// Lines: 0=blank, 1=header, 2=blank, 3=subtitle, 4=blank, 5=host, 6=token input
+		view = tea.NewView(b.String())
+		view.Cursor = tea.NewCursor(37+m.cursor, 6)
 	case SetupStateValidating:
-		b.WriteString("  GitLab host: ")
+		b.WriteString("  ")
+		b.WriteString(sBold.Styled("GitLab host:"))
+		b.WriteString(" ")
 		b.WriteString(m.host)
 		b.WriteString("\n")
-		b.WriteString("  Personal access token (api scope): ")
+		b.WriteString("  ")
+		b.WriteString(sBold.Styled("Personal access token (api scope):"))
+		b.WriteString(" ")
 		b.WriteString(strings.Repeat("*", len(m.token)))
 		b.WriteString("\n\n")
-		b.WriteString("  Validating credentials...\n")
+		b.WriteString("  ")
+		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame]+" Validating credentials..."))
+		b.WriteString("\n")
+
+		view = tea.NewView(b.String())
 	case SetupStateSuccess:
-		b.WriteString("  GitLab host: ")
+		b.WriteString("  ")
+		b.WriteString(sBold.Styled("GitLab host:"))
+		b.WriteString(" ")
 		b.WriteString(m.host)
 		b.WriteString("\n\n")
-		fmt.Fprintf(&b, "  Authenticated as %s\n", m.userName)
+		b.WriteString("  ")
+		b.WriteString(sSuccess.Styled("✓"))
+		fmt.Fprintf(&b, " Authenticated as %s\n", m.userName)
+
+		view = tea.NewView(b.String())
 	case SetupStateError:
-		b.WriteString("  GitLab host: ")
+		b.WriteString("  ")
+		b.WriteString(sBold.Styled("GitLab host:"))
+		b.WriteString(" ")
 		b.WriteString(m.host)
 		b.WriteString("\n\n")
-		fmt.Fprintf(&b, "  Error: %s\n", m.err)
-		b.WriteString("\n  Press any key to retry.\n")
+		b.WriteString("  ")
+		b.WriteString(sError.Styled("✗"))
+		fmt.Fprintf(&b, " Error: %s\n", m.err)
+		b.WriteString("\n  ")
+		b.WriteString(sFaint.Styled("Press any key to retry."))
+		b.WriteString("\n")
+
+		view = tea.NewView(b.String())
+	default:
+		view = tea.NewView(b.String())
 	}
 
-	return tea.NewView(b.String())
+	return view
 }
 
 // Exported getters for testing.

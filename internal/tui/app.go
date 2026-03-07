@@ -87,14 +87,19 @@ func (m AppModel) Init() tea.Cmd {
 	case ScreenSetup:
 		return m.setup.Init()
 	case ScreenRepoPicker:
-		return m.fetchProjects()
+		return tea.Batch(m.fetchProjects(), spinnerTick())
 	case ScreenMRList:
-		return m.fetchMRs()
+		return tea.Batch(m.fetchMRs(), spinnerTick())
 	}
 	return nil
 }
 
 func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg.(type) {
+	case spinnerTickMsg:
+		return m.propagateSpinnerTick(msg)
+	}
+
 	switch m.screen {
 	case ScreenSetup:
 		return m.updateSetup(msg)
@@ -108,18 +113,45 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m AppModel) View() tea.View {
+func (m AppModel) propagateSpinnerTick(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.screen {
 	case ScreenSetup:
-		return m.setup.View()
+		newSetup, cmd := m.setup.Update(msg)
+		m.setup = newSetup.(SetupModel)
+		return m, cmd
 	case ScreenRepoPicker:
-		return m.repoPicker.View()
+		newPicker, cmd := m.repoPicker.Update(msg)
+		m.repoPicker = newPicker.(RepoPickerModel)
+		return m, cmd
 	case ScreenMRList:
-		return m.mrList.View()
+		newList, cmd := m.mrList.Update(msg)
+		m.mrList = newList.(MRListModel)
+		return m, cmd
 	case ScreenTrainRun:
-		return m.trainRun.View()
+		newRun, cmd := m.trainRun.Update(msg)
+		m.trainRun = newRun.(TrainRunModel)
+		return m, cmd
 	}
-	return tea.NewView("")
+	return m, nil
+}
+
+func (m AppModel) View() tea.View {
+	var view tea.View
+	switch m.screen {
+	case ScreenSetup:
+		view = m.setup.View()
+	case ScreenRepoPicker:
+		view = m.repoPicker.View()
+	case ScreenMRList:
+		view = m.mrList.View()
+	case ScreenTrainRun:
+		view = m.trainRun.View()
+	default:
+		view = tea.NewView("")
+	}
+	view.AltScreen = true
+	view.WindowTitle = "glmt"
+	return view
 }
 
 func (m AppModel) updateSetup(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -139,7 +171,7 @@ func (m AppModel) updateSetup(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.screen = ScreenRepoPicker
 		m.repoPicker = NewRepoPickerModel(detectRepoFromGit())
-		return m, m.fetchProjects()
+		return m, tea.Batch(m.fetchProjects(), spinnerTick())
 	}
 
 	return m, cmd
@@ -159,7 +191,7 @@ func (m AppModel) updateRepoPicker(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.screen = ScreenMRList
 		m.mrList = NewMRListModel(msg.project.PathWithNamespace)
-		return m, m.fetchMRs()
+		return m, tea.Batch(m.fetchMRs(), spinnerTick())
 	}
 
 	newPicker, cmd := m.repoPicker.Update(msg)
@@ -173,14 +205,15 @@ func (m AppModel) updateMRList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		_ = msg
 		m.screen = ScreenRepoPicker
 		m.repoPicker = NewRepoPickerModel(detectRepoFromGit())
-		return m, m.fetchProjects()
+		return m, tea.Batch(m.fetchProjects(), spinnerTick())
 	case refetchMRsMsg:
 		_ = msg
-		return m, m.fetchMRs()
+		m.mrList.loading = true
+		return m, tea.Batch(m.fetchMRs(), spinnerTick())
 	case startTrainMsg:
 		m.screen = ScreenTrainRun
 		m.trainRun = NewTrainRunModel(msg.mrs)
-		return m, m.startTrain(msg.mrs)
+		return m, tea.Batch(m.startTrain(msg.mrs), spinnerTick())
 	case mrsLoadedMsg:
 		newList, cmd := m.mrList.Update(msg)
 		m.mrList = newList.(MRListModel)

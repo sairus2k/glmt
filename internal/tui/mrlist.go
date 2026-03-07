@@ -11,11 +11,13 @@ import (
 
 // MRListModel is the bubbletea model for the MR list + selection screen.
 type MRListModel struct {
-	eligible   []*gitlab.MergeRequest
-	ineligible []IneligibleMR
-	selected   map[int]bool // MR IID -> selected
-	cursor     int
-	repoPath   string
+	eligible     []*gitlab.MergeRequest
+	ineligible   []IneligibleMR
+	selected     map[int]bool // MR IID -> selected
+	cursor       int
+	repoPath     string
+	loading      bool
+	spinnerFrame int
 }
 
 // IneligibleMR pairs a merge request with the reason it cannot be selected.
@@ -43,6 +45,7 @@ func NewMRListModel(repoPath string) MRListModel {
 	return MRListModel{
 		selected: make(map[int]bool),
 		repoPath: repoPath,
+		loading:  true,
 	}
 }
 
@@ -84,6 +87,12 @@ func (m MRListModel) isIneligibleIndex(idx int) bool {
 // Update handles messages and key presses.
 func (m MRListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case spinnerTickMsg:
+		if m.loading {
+			m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
+			return m, spinnerTick()
+		}
+		return m, nil
 	case mrsLoadedMsg:
 		return m.handleMRsLoaded(msg), nil
 
@@ -95,6 +104,7 @@ func (m MRListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m MRListModel) handleMRsLoaded(msg mrsLoadedMsg) MRListModel {
+	m.loading = false
 	m.eligible = nil
 	m.ineligible = nil
 	m.selected = make(map[int]bool)
@@ -248,30 +258,56 @@ func (m MRListModel) startTrain() (tea.Model, tea.Cmd) {
 func (m MRListModel) View() tea.View {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "  Repo: %s\n\n", m.repoPath)
+	b.WriteString("  ")
+	b.WriteString(sBold.Styled("Repo:"))
+	b.WriteString(" ")
+	b.WriteString(sRunning.Styled(m.repoPath))
+	b.WriteString("\n\n")
 
-	total := m.totalCount()
-	if total == 0 {
-		b.WriteString("  No merge requests found.\n\n")
-		b.WriteString("  [R] refresh  [r] change repo  [q] quit\n")
+	if m.loading {
+		b.WriteString("  ")
+		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame]+" Loading merge requests..."))
+		b.WriteString("\n\n")
+		b.WriteString("  ")
+		b.WriteString(sFaint.Styled(sKey.Styled("[R]")+" refresh  "+sKey.Styled("[r]")+" change repo  "+sKey.Styled("[q]")+" quit"))
+		b.WriteString("\n")
 		return tea.NewView(b.String())
 	}
 
-	fmt.Fprintf(&b, "  Open merge requests                          %d selected / %d eligible\n\n",
-		m.SelectedCount(), len(m.eligible))
+	total := m.totalCount()
+	if total == 0 {
+		b.WriteString("  ")
+		b.WriteString(sFaint.Styled("No merge requests found."))
+		b.WriteString("\n\n")
+		b.WriteString("  ")
+		b.WriteString(sFaint.Styled(sKey.Styled("[R]")+" refresh  "+sKey.Styled("[r]")+" change repo  "+sKey.Styled("[q]")+" quit"))
+		b.WriteString("\n")
+		return tea.NewView(b.String())
+	}
+
+	b.WriteString("  Open merge requests                          ")
+	b.WriteString(sSuccess.Styled(fmt.Sprintf("%d selected", m.SelectedCount())))
+	b.WriteString(sFaint.Styled(fmt.Sprintf(" / %d eligible", len(m.eligible))))
+	b.WriteString("\n\n")
 
 	// Render eligible MRs.
 	for i, mr := range m.eligible {
-		cursor := " "
 		if i == m.cursor {
-			cursor = ">"
+			b.WriteString(sCursor.Styled(">"))
+		} else {
+			b.WriteString(" ")
 		}
-		sel := "\u25cb" // ○
+		b.WriteString(" ")
 		if m.selected[mr.IID] {
-			sel = "\u25cf" // ●
+			b.WriteString(sSelected.Styled("\u25cf")) // ●
+		} else {
+			b.WriteString(sFaint.Styled("\u25cb")) // ○
 		}
-		fmt.Fprintf(&b, "%s %s !%d  %s  @%s  %d commits\n",
-			cursor, sel, mr.IID, mr.Title, mr.Author, mr.CommitCount)
+		fmt.Fprintf(&b, " %s  %s  %s  %s\n",
+			sBold.Styled(fmt.Sprintf("!%d", mr.IID)),
+			mr.Title,
+			sFaint.Styled("@"+mr.Author),
+			sFaint.Styled(fmt.Sprintf("%d commits", mr.CommitCount)))
 	}
 
 	if len(m.ineligible) > 0 && len(m.eligible) > 0 {
@@ -281,16 +317,30 @@ func (m MRListModel) View() tea.View {
 	// Render ineligible MRs.
 	for i, imr := range m.ineligible {
 		idx := len(m.eligible) + i
-		cursor := " "
 		if idx == m.cursor {
-			cursor = ">"
+			b.WriteString(sCursor.Styled(">"))
+		} else {
+			b.WriteString(" ")
 		}
-		fmt.Fprintf(&b, "%s \u2717 !%d  %s  @%s  %d commits  [%s]\n",
-			cursor, imr.MR.IID, imr.MR.Title, imr.MR.Author, imr.MR.CommitCount, imr.Reason)
+		fmt.Fprintf(&b, " %s %s  %s  %s  %s  %s\n",
+			sError.Styled("\u2717"),
+			sDim.Styled(fmt.Sprintf("!%d", imr.MR.IID)),
+			sDim.Styled(imr.MR.Title),
+			sDim.Styled("@"+imr.MR.Author),
+			sDim.Styled(fmt.Sprintf("%d commits", imr.MR.CommitCount)),
+			sWarning.Styled(fmt.Sprintf("[%s]", imr.Reason)))
 	}
 
 	b.WriteString("\n")
-	b.WriteString("  [Space] toggle  [a] all  [Shift+\u2191\u2193] reorder  [R] refresh  [Enter] start  [q] quit\n")
+	b.WriteString("  ")
+	b.WriteString(sFaint.Styled(
+		sKey.Styled("[Space]")+" toggle  "+
+			sKey.Styled("[a]")+" all  "+
+			sKey.Styled("[Shift+\u2191\u2193]")+" reorder  "+
+			sKey.Styled("[R]")+" refresh  "+
+			sKey.Styled("[Enter]")+" start  "+
+			sKey.Styled("[q]")+" quit"))
+	b.WriteString("\n")
 
 	return tea.NewView(b.String())
 }
