@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
 	tea "charm.land/bubbletea/v2"
 	"github.com/sairus2k/glmt/internal/gitlab"
 )
@@ -21,6 +22,7 @@ type MRListModel struct {
 	errMsg        string
 	contentHeight int
 	scrollOffset  int
+	width         int
 }
 
 // IneligibleMR pairs a merge request with the reason it cannot be selected.
@@ -273,6 +275,122 @@ func (m MRListModel) startTrain() (tea.Model, tea.Cmd) {
 	return m, func() tea.Msg { return startTrainMsg{mrs: mrs} }
 }
 
+// tableLayout holds precomputed column widths for the MR table.
+type tableLayout struct {
+	maxIID       int
+	maxAuthor    int
+	maxCommits   int
+	maxApprovals int
+	maxBadge     int
+	titleWidth   int
+}
+
+// computeLayout computes column widths for table alignment across all MRs.
+func (m MRListModel) computeLayout() tableLayout {
+	var l tableLayout
+	for _, mr := range m.eligible {
+		l.maxIID = max(l.maxIID, ansi.StringWidth(fmt.Sprintf("!%d", mr.IID)))
+		l.maxAuthor = max(l.maxAuthor, ansi.StringWidth("@"+mr.Author))
+		l.maxCommits = max(l.maxCommits, ansi.StringWidth(fmt.Sprintf("%d commits", mr.CommitCount)))
+		if mr.ApprovalCount > 0 {
+			l.maxApprovals = max(l.maxApprovals, ansi.StringWidth(fmt.Sprintf("✓ %d", mr.ApprovalCount)))
+		}
+	}
+	for _, imr := range m.ineligible {
+		mr := imr.MR
+		l.maxIID = max(l.maxIID, ansi.StringWidth(fmt.Sprintf("!%d", mr.IID)))
+		l.maxAuthor = max(l.maxAuthor, ansi.StringWidth("@"+mr.Author))
+		l.maxCommits = max(l.maxCommits, ansi.StringWidth(fmt.Sprintf("%d commits", mr.CommitCount)))
+		if mr.ApprovalCount > 0 {
+			l.maxApprovals = max(l.maxApprovals, ansi.StringWidth(fmt.Sprintf("✓ %d", mr.ApprovalCount)))
+		}
+		l.maxBadge = max(l.maxBadge, ansi.StringWidth(fmt.Sprintf("[%s]", imr.Reason)))
+	}
+
+	const prefixWidth = 4 // "> ● " or "  ○ " or "  ✗ "
+	const colGap = 2
+	fixed := prefixWidth + l.maxIID + colGap + colGap + l.maxAuthor + colGap + l.maxCommits
+	if l.maxApprovals > 0 {
+		fixed += colGap + l.maxApprovals
+	}
+	if l.maxBadge > 0 {
+		fixed += colGap + l.maxBadge
+	}
+
+	if m.width > 0 {
+		l.titleWidth = m.width - fixed
+	} else {
+		l.titleWidth = 200
+	}
+	if l.titleWidth < 10 {
+		l.titleWidth = 10
+	}
+	return l
+}
+
+func padLeft(s string, width int) string {
+	w := ansi.StringWidth(s)
+	if w >= width {
+		return s
+	}
+	return strings.Repeat(" ", width-w) + s
+}
+
+func padRight(s string, width int) string {
+	w := ansi.StringWidth(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
+}
+
+// wrapTitle splits a title at a word boundary if it exceeds the given width.
+func wrapTitle(title string, width int) (string, string) {
+	if width <= 0 || ansi.StringWidth(title) <= width {
+		return title, ""
+	}
+	lastSpace := -1
+	w := 0
+	for i, r := range title {
+		rw := ansi.StringWidth(string(r))
+		if w+rw > width {
+			break
+		}
+		if r == ' ' {
+			lastSpace = i
+		}
+		w += rw
+	}
+	if lastSpace > 0 {
+		return title[:lastSpace], title[lastSpace+1:]
+	}
+	w = 0
+	for i, r := range title {
+		rw := ansi.StringWidth(string(r))
+		if w+rw > width {
+			return title[:i], title[i:]
+		}
+		w += rw
+	}
+	return title, ""
+}
+
+// truncateText truncates a string to fit within width, appending "…" if needed.
+func truncateText(s string, width int) string {
+	if width <= 1 || ansi.StringWidth(s) <= width {
+		return s
+	}
+	w := 0
+	for i, r := range s {
+		rw := ansi.StringWidth(string(r))
+		if w+rw > width-1 {
+			return s[:i] + "…"
+		}
+		w += rw
+	}
+	return s
+}
+
 // View renders the MR list screen.
 func (m MRListModel) View() tea.View {
 	var b strings.Builder
@@ -311,12 +429,15 @@ func (m MRListModel) View() tea.View {
 	b.WriteString(sFaint.Styled(fmt.Sprintf(" / %d eligible", len(m.eligible))))
 	b.WriteString("\n\n")
 
-	// Build all item lines, then render only the visible window.
-	type itemLine struct {
-		idx  int // global index (eligible + ineligible)
-		text string
+	// Compute table layout.
+	lay := m.computeLayout()
+
+	// Build display items with line counts for scroll accounting.
+	type displayItem struct {
+		text  string
+		lines int
 	}
-	var items []itemLine
+	var items []displayItem
 
 	for i, mr := range m.eligible {
 		var lb strings.Builder
@@ -327,26 +448,49 @@ func (m MRListModel) View() tea.View {
 		}
 		lb.WriteString(" ")
 		if m.selected[mr.IID] {
-			lb.WriteString(sSelected.Styled("\u25cf")) // ●
+			lb.WriteString(sSelected.Styled("\u25cf"))
 		} else {
-			lb.WriteString(sFaint.Styled("\u25cb")) // ○
+			lb.WriteString(sFaint.Styled("\u25cb"))
 		}
-		approvals := ""
-		if mr.ApprovalCount > 0 {
-			approvals = "  " + sSuccess.Styled(fmt.Sprintf("✓ %d", mr.ApprovalCount))
+		lb.WriteString(" ")
+		lb.WriteString(padLeft(sBold.Styled(fmt.Sprintf("!%d", mr.IID)), lay.maxIID))
+		lb.WriteString("  ")
+
+		first, second := wrapTitle(mr.Title, lay.titleWidth)
+		lb.WriteString(padRight(first, lay.titleWidth))
+		lb.WriteString("  ")
+
+		lb.WriteString(padLeft(sFaint.Styled("@"+mr.Author), lay.maxAuthor))
+		lb.WriteString("  ")
+		lb.WriteString(padLeft(sFaint.Styled(fmt.Sprintf("%d commits", mr.CommitCount)), lay.maxCommits))
+
+		if lay.maxApprovals > 0 {
+			lb.WriteString("  ")
+			if mr.ApprovalCount > 0 {
+				lb.WriteString(padLeft(sSuccess.Styled(fmt.Sprintf("✓ %d", mr.ApprovalCount)), lay.maxApprovals))
+			} else {
+				lb.WriteString(strings.Repeat(" ", lay.maxApprovals))
+			}
 		}
-		fmt.Fprintf(&lb, " %s  %s  %s  %s%s",
-			sBold.Styled(fmt.Sprintf("!%d", mr.IID)),
-			mr.Title,
-			sFaint.Styled("@"+mr.Author),
-			sFaint.Styled(fmt.Sprintf("%d commits", mr.CommitCount)),
-			approvals)
-		items = append(items, itemLine{idx: i, text: lb.String()})
+		if lay.maxBadge > 0 {
+			lb.WriteString("  ")
+			lb.WriteString(strings.Repeat(" ", lay.maxBadge))
+		}
+
+		lineCount := 1
+		if second != "" {
+			second = truncateText(second, lay.titleWidth)
+			lb.WriteString("\n")
+			lb.WriteString(strings.Repeat(" ", 4+lay.maxIID+2))
+			lb.WriteString(padRight(second, lay.titleWidth))
+			lineCount = 2
+		}
+		items = append(items, displayItem{text: lb.String(), lines: lineCount})
 	}
 
 	// Separator between eligible and ineligible.
 	if len(m.ineligible) > 0 && len(m.eligible) > 0 {
-		items = append(items, itemLine{idx: -1, text: ""})
+		items = append(items, displayItem{text: "", lines: 1})
 	}
 
 	for i, imr := range m.ineligible {
@@ -357,34 +501,51 @@ func (m MRListModel) View() tea.View {
 		} else {
 			lb.WriteString(" ")
 		}
-		approvals := ""
-		if imr.MR.ApprovalCount > 0 {
-			approvals = "  " + sDim.Styled(fmt.Sprintf("✓ %d", imr.MR.ApprovalCount))
+		lb.WriteString(" ")
+		lb.WriteString(sError.Styled("\u2717"))
+		lb.WriteString(" ")
+		lb.WriteString(padLeft(sDim.Styled(fmt.Sprintf("!%d", imr.MR.IID)), lay.maxIID))
+		lb.WriteString("  ")
+
+		first, second := wrapTitle(imr.MR.Title, lay.titleWidth)
+		lb.WriteString(padRight(sDim.Styled(first), lay.titleWidth))
+		lb.WriteString("  ")
+
+		lb.WriteString(padLeft(sDim.Styled("@"+imr.MR.Author), lay.maxAuthor))
+		lb.WriteString("  ")
+		lb.WriteString(padLeft(sDim.Styled(fmt.Sprintf("%d commits", imr.MR.CommitCount)), lay.maxCommits))
+
+		if lay.maxApprovals > 0 {
+			lb.WriteString("  ")
+			if imr.MR.ApprovalCount > 0 {
+				lb.WriteString(padLeft(sDim.Styled(fmt.Sprintf("✓ %d", imr.MR.ApprovalCount)), lay.maxApprovals))
+			} else {
+				lb.WriteString(strings.Repeat(" ", lay.maxApprovals))
+			}
 		}
-		fmt.Fprintf(&lb, " %s %s  %s  %s  %s%s  %s",
-			sError.Styled("\u2717"),
-			sDim.Styled(fmt.Sprintf("!%d", imr.MR.IID)),
-			sDim.Styled(imr.MR.Title),
-			sDim.Styled("@"+imr.MR.Author),
-			sDim.Styled(fmt.Sprintf("%d commits", imr.MR.CommitCount)),
-			approvals,
-			sWarning.Styled(fmt.Sprintf("[%s]", imr.Reason)))
-		items = append(items, itemLine{idx: idx, text: lb.String()})
+		if lay.maxBadge > 0 {
+			lb.WriteString("  ")
+			lb.WriteString(padLeft(sWarning.Styled(fmt.Sprintf("[%s]", imr.Reason)), lay.maxBadge))
+		}
+
+		lineCount := 1
+		if second != "" {
+			second = truncateText(second, lay.titleWidth)
+			lb.WriteString("\n")
+			lb.WriteString(strings.Repeat(" ", 4+lay.maxIID+2))
+			lb.WriteString(padRight(sDim.Styled(second), lay.titleWidth))
+			lineCount = 2
+		}
+		items = append(items, displayItem{text: lb.String(), lines: lineCount})
 	}
 
-	// Render visible window.
-	visible := m.visibleItems()
-	end := m.scrollOffset + visible
-	if end > len(items) {
-		end = len(items)
-	}
-	start := m.scrollOffset
-	if start > len(items) {
-		start = len(items)
-	}
-	for i := start; i < end; i++ {
+	// Render visible window (line-based).
+	available := m.visibleItems()
+	linesRendered := 0
+	for i := m.scrollOffset; i < len(items) && linesRendered < available; i++ {
 		b.WriteString(items[i].text)
 		b.WriteString("\n")
+		linesRendered += items[i].lines
 	}
 
 	return tea.NewView(b.String())
@@ -414,7 +575,7 @@ func (m MRListModel) KeyHints() []KeyHint {
 
 const mrListHeaderLines = 4 // repo, blank, section header, blank
 
-// visibleItems returns the number of items that fit in the content area.
+// visibleItems returns the number of lines that fit in the content area.
 func (m MRListModel) visibleItems() int {
 	if m.contentHeight <= mrListHeaderLines {
 		return m.totalCount() + 1 // +1 for separator; no constraint
@@ -426,14 +587,59 @@ func (m MRListModel) visibleItems() int {
 	return v
 }
 
-// adjustScroll adjusts scrollOffset to keep the cursor visible.
+// adjustScroll adjusts scrollOffset to keep the cursor visible,
+// accounting for multi-line items (wrapped titles).
 func (m *MRListModel) adjustScroll() {
-	visible := m.visibleItems()
-	if m.cursor < m.scrollOffset {
-		m.scrollOffset = m.cursor
+	if m.totalCount() == 0 {
+		return
 	}
-	if m.cursor >= m.scrollOffset+visible {
-		m.scrollOffset = m.cursor - visible + 1
+
+	available := m.visibleItems()
+	lay := m.computeLayout()
+	hasSep := len(m.ineligible) > 0 && len(m.eligible) > 0
+
+	// Build line counts per display item (same order as View).
+	var itemLines []int
+	for _, mr := range m.eligible {
+		_, second := wrapTitle(mr.Title, lay.titleWidth)
+		if second != "" {
+			itemLines = append(itemLines, 2)
+		} else {
+			itemLines = append(itemLines, 1)
+		}
+	}
+	if hasSep {
+		itemLines = append(itemLines, 1)
+	}
+	for _, imr := range m.ineligible {
+		_, second := wrapTitle(imr.MR.Title, lay.titleWidth)
+		if second != "" {
+			itemLines = append(itemLines, 2)
+		} else {
+			itemLines = append(itemLines, 1)
+		}
+	}
+
+	// Map cursor (MR index) to display items index.
+	cursorIdx := m.cursor
+	if hasSep && m.cursor >= len(m.eligible) {
+		cursorIdx = m.cursor + 1
+	}
+
+	if cursorIdx < m.scrollOffset {
+		m.scrollOffset = cursorIdx
+	}
+
+	// Count lines from scrollOffset to cursorIdx (inclusive).
+	linesUsed := 0
+	for i := m.scrollOffset; i <= cursorIdx && i < len(itemLines); i++ {
+		linesUsed += itemLines[i]
+	}
+
+	// Advance scrollOffset until cursor fits within available lines.
+	for linesUsed > available && m.scrollOffset < cursorIdx {
+		linesUsed -= itemLines[m.scrollOffset]
+		m.scrollOffset++
 	}
 }
 

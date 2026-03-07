@@ -142,6 +142,7 @@ func (m *AppModel) propagateContentHeight() {
 	ch := m.contentHeight()
 	m.repoPicker.contentHeight = ch
 	m.mrList.contentHeight = ch
+	m.mrList.width = m.width
 }
 
 func (m AppModel) loginStatus() string {
