@@ -3,11 +3,13 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
 	"testing"
 
+	"github.com/sairus2k/glmt/internal/gitlab"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,6 +27,15 @@ func TestTrainMergesAllMRs(t *testing.T) {
 	// Start GitLab and seed data
 	env := setupGitLab(t)
 	defer env.cleanup()
+
+	// Verify commit counts are populated via the glmt client
+	apiClient, err := gitlab.NewAPIClient(env.gitlabURL, env.token)
+	require.NoError(t, err)
+	for _, iid := range env.mrIIDs {
+		mr, err := apiClient.GetMergeRequest(context.Background(), env.projectID, iid)
+		require.NoError(t, err, "GetMergeRequest for !%d", iid)
+		assert.Equal(t, 1, mr.CommitCount, "MR !%d should have 1 commit", iid)
+	}
 
 	// Build the --mrs flag value
 	mrsFlag := make([]string, len(env.mrIIDs))

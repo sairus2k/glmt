@@ -55,6 +55,11 @@ type Client interface {
 	// ListMergeRequests returns open merge requests for a project.
 	ListMergeRequests(ctx context.Context, projectID int) ([]*MergeRequest, error)
 
+	// ListMergeRequestsFull returns open merge requests with all fields (including
+	// pipeline status and commit count) via a single GraphQL query.
+	// projectPath is the full path (e.g. "team/project").
+	ListMergeRequestsFull(ctx context.Context, projectPath string) ([]*MergeRequest, error)
+
 	// GetMergeRequest returns a single merge request with full detail.
 	GetMergeRequest(ctx context.Context, projectID, mrIID int) (*MergeRequest, error)
 

@@ -2,7 +2,9 @@ package gitlab
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -135,7 +137,14 @@ func (c *APIClient) GetMergeRequest(ctx context.Context, projectID, mrIID int) (
 	if err != nil {
 		return nil, fmt.Errorf("getting merge request %d: %w", mrIID, err)
 	}
-	return convertMergeRequest(mr), nil
+	result := convertMergeRequest(mr)
+
+	commits, _, err := c.client.MergeRequests.GetMergeRequestCommits(int64(projectID), int64(mrIID), nil, goGitLab.WithContext(ctx))
+	if err == nil {
+		result.CommitCount = len(commits)
+	}
+
+	return result, nil
 }
 
 // RebaseMergeRequest triggers a rebase of the MR onto its target branch.
@@ -257,6 +266,137 @@ func (c *APIClient) RetryPipeline(ctx context.Context, projectID, pipelineID int
 		SHA:    p.SHA,
 		WebURL: p.WebURL,
 	}, nil
+}
+
+// graphQLStringInt is an int that GraphQL encodes as a JSON string (e.g. IID).
+type graphQLStringInt int
+
+func (g *graphQLStringInt) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		return fmt.Errorf("parsing %q as int: %w", s, err)
+	}
+	*g = graphQLStringInt(i)
+	return nil
+}
+
+// ListMergeRequestsFull fetches open merge requests with all fields via GraphQL.
+func (c *APIClient) ListMergeRequestsFull(ctx context.Context, projectPath string) ([]*MergeRequest, error) {
+	const query = `query($projectPath: ID!, $after: String) {
+		project(fullPath: $projectPath) {
+			mergeRequests(state: opened, sort: CREATED_ASC, first: 100, after: $after) {
+				pageInfo { endCursor hasNextPage }
+				nodes {
+					iid title draft commitCount
+					author { username }
+					sourceBranch targetBranch diffHeadSha createdAt
+					headPipeline { status }
+					detailedMergeStatus
+					webUrl
+				}
+			}
+		}
+	}`
+
+	type graphQLNode struct {
+		IID                 graphQLStringInt `json:"iid"`
+		Title               string           `json:"title"`
+		Draft               bool             `json:"draft"`
+		CommitCount         int              `json:"commitCount"`
+		Author              *struct {
+			Username string `json:"username"`
+		} `json:"author"`
+		SourceBranch        string `json:"sourceBranch"`
+		TargetBranch        string `json:"targetBranch"`
+		DiffHeadSha         string `json:"diffHeadSha"`
+		CreatedAt           string `json:"createdAt"`
+		HeadPipeline        *struct {
+			Status string `json:"status"`
+		} `json:"headPipeline"`
+		DetailedMergeStatus string `json:"detailedMergeStatus"`
+		WebURL              string `json:"webUrl"`
+	}
+
+	type graphQLResponse struct {
+		Data *struct {
+			Project *struct {
+				MergeRequests struct {
+					PageInfo goGitLab.PageInfo `json:"pageInfo"`
+					Nodes    []graphQLNode     `json:"nodes"`
+				} `json:"mergeRequests"`
+			} `json:"project"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+
+	var all []*MergeRequest
+	var after *string
+
+	for {
+		vars := map[string]any{"projectPath": projectPath}
+		if after != nil {
+			vars["after"] = *after
+		}
+
+		var resp graphQLResponse
+
+		_, err := c.client.GraphQL.Do(goGitLab.GraphQLQuery{
+			Query:     query,
+			Variables: vars,
+		}, &resp, goGitLab.WithContext(ctx))
+		if err != nil {
+			return nil, fmt.Errorf("graphql ListMergeRequestsFull: %w", err)
+		}
+
+		if len(resp.Errors) > 0 {
+			msgs := make([]string, len(resp.Errors))
+			for i, e := range resp.Errors {
+				msgs[i] = e.Message
+			}
+			return nil, fmt.Errorf("graphql ListMergeRequestsFull: %s", strings.Join(msgs, "; "))
+		}
+
+		if resp.Data == nil || resp.Data.Project == nil {
+			return nil, fmt.Errorf("graphql ListMergeRequestsFull: project %q not found", projectPath)
+		}
+
+		conn := resp.Data.Project.MergeRequests
+		for _, n := range conn.Nodes {
+			mr := &MergeRequest{
+				IID:                         int(n.IID),
+				Title:                       n.Title,
+				Draft:                       n.Draft,
+				CommitCount:                 n.CommitCount,
+				SourceBranch:                n.SourceBranch,
+				TargetBranch:                n.TargetBranch,
+				SHA:                         n.DiffHeadSha,
+				CreatedAt:                   n.CreatedAt,
+				DetailedMergeStatus:         strings.ToLower(n.DetailedMergeStatus),
+				BlockingDiscussionsResolved: true, // not available in GraphQL; safe default
+				WebURL:                      n.WebURL,
+			}
+			if n.Author != nil {
+				mr.Author = n.Author.Username
+			}
+			if n.HeadPipeline != nil {
+				mr.HeadPipelineStatus = strings.ToLower(n.HeadPipeline.Status)
+			}
+			all = append(all, mr)
+		}
+
+		if !conn.PageInfo.HasNextPage {
+			break
+		}
+		after = &conn.PageInfo.EndCursor
+	}
+
+	return all, nil
 }
 
 func convertMergeRequest(mr *goGitLab.MergeRequest) *MergeRequest {

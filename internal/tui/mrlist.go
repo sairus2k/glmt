@@ -18,6 +18,7 @@ type MRListModel struct {
 	repoPath     string
 	loading      bool
 	spinnerFrame int
+	errMsg       string
 }
 
 // IneligibleMR pairs a merge request with the reason it cannot be selected.
@@ -30,6 +31,7 @@ type IneligibleMR struct {
 
 type mrsLoadedMsg struct {
 	mrs []*gitlab.MergeRequest
+	err error
 }
 
 type startTrainMsg struct {
@@ -109,6 +111,12 @@ func (m MRListModel) handleMRsLoaded(msg mrsLoadedMsg) MRListModel {
 	m.ineligible = nil
 	m.selected = make(map[int]bool)
 	m.cursor = 0
+	m.errMsg = ""
+
+	if msg.err != nil {
+		m.errMsg = msg.err.Error()
+		return m
+	}
 
 	// Sort all MRs by CreatedAt ascending first.
 	mrs := make([]*gitlab.MergeRequest, len(msg.mrs))
@@ -277,7 +285,11 @@ func (m MRListModel) View() tea.View {
 	total := m.totalCount()
 	if total == 0 {
 		b.WriteString("  ")
-		b.WriteString(sFaint.Styled("No merge requests found."))
+		if m.errMsg != "" {
+			b.WriteString(sError.Styled("Error: " + m.errMsg))
+		} else {
+			b.WriteString(sFaint.Styled("No merge requests found."))
+		}
 		b.WriteString("\n\n")
 		b.WriteString("  ")
 		b.WriteString(sFaint.Styled(sKey.Styled("[R]") + " refresh  " + sKey.Styled("[r]") + " change repo  " + sKey.Styled("[q]") + " quit"))

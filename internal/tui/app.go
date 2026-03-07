@@ -260,23 +260,13 @@ func (m AppModel) fetchProjects() tea.Cmd {
 
 func (m AppModel) fetchMRs() tea.Cmd {
 	client := m.client
-	projectID := m.projectID
+	repoPath := m.mrList.repoPath
 	return func() tea.Msg {
-		mrs, err := client.ListMergeRequests(context.Background(), projectID)
+		mrs, err := client.ListMergeRequestsFull(context.Background(), repoPath)
 		if err != nil {
-			return mrsLoadedMsg{mrs: nil}
+			return mrsLoadedMsg{err: err}
 		}
-		// Enrich each MR with pipeline status via GetMergeRequest
-		enriched := make([]*gitlab.MergeRequest, len(mrs))
-		for i, mr := range mrs {
-			full, err := client.GetMergeRequest(context.Background(), projectID, mr.IID)
-			if err != nil {
-				enriched[i] = mr
-			} else {
-				enriched[i] = full
-			}
-		}
-		return mrsLoadedMsg{mrs: enriched}
+		return mrsLoadedMsg{mrs: mrs}
 	}
 }
 
