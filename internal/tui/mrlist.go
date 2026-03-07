@@ -319,11 +319,16 @@ func (m MRListModel) View() tea.View {
 		} else {
 			b.WriteString(sFaint.Styled("\u25cb")) // ○
 		}
-		fmt.Fprintf(&b, " %s  %s  %s  %s\n",
+		approvals := ""
+		if mr.ApprovalCount > 0 {
+			approvals = "  " + sSuccess.Styled(fmt.Sprintf("✓ %d", mr.ApprovalCount))
+		}
+		fmt.Fprintf(&b, " %s  %s  %s  %s%s\n",
 			sBold.Styled(fmt.Sprintf("!%d", mr.IID)),
 			mr.Title,
 			sFaint.Styled("@"+mr.Author),
-			sFaint.Styled(fmt.Sprintf("%d commits", mr.CommitCount)))
+			sFaint.Styled(fmt.Sprintf("%d commits", mr.CommitCount)),
+			approvals)
 	}
 
 	if len(m.ineligible) > 0 && len(m.eligible) > 0 {
@@ -338,12 +343,17 @@ func (m MRListModel) View() tea.View {
 		} else {
 			b.WriteString(" ")
 		}
-		fmt.Fprintf(&b, " %s %s  %s  %s  %s  %s\n",
+		approvals := ""
+		if imr.MR.ApprovalCount > 0 {
+			approvals = "  " + sDim.Styled(fmt.Sprintf("✓ %d", imr.MR.ApprovalCount))
+		}
+		fmt.Fprintf(&b, " %s %s  %s  %s  %s%s  %s\n",
 			sError.Styled("\u2717"),
 			sDim.Styled(fmt.Sprintf("!%d", imr.MR.IID)),
 			sDim.Styled(imr.MR.Title),
 			sDim.Styled("@"+imr.MR.Author),
 			sDim.Styled(fmt.Sprintf("%d commits", imr.MR.CommitCount)),
+			approvals,
 			sWarning.Styled(fmt.Sprintf("[%s]", imr.Reason)))
 	}
 

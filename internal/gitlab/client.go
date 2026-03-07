@@ -90,48 +90,6 @@ func (c *APIClient) ListProjects(ctx context.Context, search string) ([]*Project
 	return result, nil
 }
 
-// ListMergeRequests returns open merge requests for a project.
-func (c *APIClient) ListMergeRequests(ctx context.Context, projectID int) ([]*MergeRequest, error) {
-	withRecheck := true
-	opts := &goGitLab.ListProjectMergeRequestsOptions{
-		State:                  goGitLab.Ptr("opened"),
-		OrderBy:                goGitLab.Ptr("created_at"),
-		Sort:                   goGitLab.Ptr("asc"),
-		WithMergeStatusRecheck: &withRecheck,
-	}
-
-	basicMRs, _, err := c.client.MergeRequests.ListProjectMergeRequests(projectID, opts, goGitLab.WithContext(ctx))
-	if err != nil {
-		return nil, fmt.Errorf("listing merge requests: %w", err)
-	}
-
-	result := make([]*MergeRequest, len(basicMRs))
-	for i, bmr := range basicMRs {
-		createdAt := ""
-		if bmr.CreatedAt != nil {
-			createdAt = bmr.CreatedAt.Format(time.RFC3339)
-		}
-		author := ""
-		if bmr.Author != nil {
-			author = bmr.Author.Username
-		}
-		result[i] = &MergeRequest{
-			IID:                         int(bmr.IID),
-			Title:                       bmr.Title,
-			Author:                      author,
-			SourceBranch:                bmr.SourceBranch,
-			TargetBranch:                bmr.TargetBranch,
-			SHA:                         bmr.SHA,
-			CreatedAt:                   createdAt,
-			Draft:                       bmr.Draft,
-			DetailedMergeStatus:         bmr.DetailedMergeStatus,
-			BlockingDiscussionsResolved: bmr.BlockingDiscussionsResolved,
-			WebURL:                      bmr.WebURL,
-		}
-	}
-	return result, nil
-}
-
 // GetMergeRequest returns a single merge request with full detail.
 func (c *APIClient) GetMergeRequest(ctx context.Context, projectID, mrIID int) (*MergeRequest, error) {
 	mr, _, err := c.client.MergeRequests.GetMergeRequest(int64(projectID), int64(mrIID), nil, goGitLab.WithContext(ctx))
@@ -295,6 +253,7 @@ func (c *APIClient) ListMergeRequestsFull(ctx context.Context, projectPath strin
 					iid title draft commitCount
 					author { username }
 					sourceBranch targetBranch diffHeadSha createdAt
+					approvedBy { nodes { username } }
 					headPipeline { status }
 					detailedMergeStatus
 					webUrl
@@ -315,7 +274,12 @@ func (c *APIClient) ListMergeRequestsFull(ctx context.Context, projectPath strin
 		TargetBranch        string `json:"targetBranch"`
 		DiffHeadSha         string `json:"diffHeadSha"`
 		CreatedAt           string `json:"createdAt"`
-		HeadPipeline        *struct {
+		ApprovedBy struct {
+			Nodes []struct {
+				Username string `json:"username"`
+			} `json:"nodes"`
+		} `json:"approvedBy"`
+		HeadPipeline *struct {
 			Status string `json:"status"`
 		} `json:"headPipeline"`
 		DetailedMergeStatus string `json:"detailedMergeStatus"`
@@ -385,6 +349,7 @@ func (c *APIClient) ListMergeRequestsFull(ctx context.Context, projectPath strin
 			if n.Author != nil {
 				mr.Author = n.Author.Username
 			}
+			mr.ApprovalCount = len(n.ApprovedBy.Nodes)
 			if n.HeadPipeline != nil {
 				mr.HeadPipelineStatus = strings.ToLower(n.HeadPipeline.Status)
 			}

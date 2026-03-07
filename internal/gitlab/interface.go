@@ -13,7 +13,7 @@ type MergeRequest struct {
 	CreatedAt                   string
 	CommitCount                 int
 	Draft                       bool
-	ApprovalsLeft               int
+	ApprovalCount               int
 	HeadPipelineStatus          string // success, failed, running, pending, canceled, skipped, created
 	DetailedMergeStatus         string // mergeable, checking, unchecked, etc.
 	BlockingDiscussionsResolved bool
@@ -51,9 +51,6 @@ type Client interface {
 
 	// ListProjects returns projects accessible to the current user.
 	ListProjects(ctx context.Context, search string) ([]*Project, error)
-
-	// ListMergeRequests returns open merge requests for a project.
-	ListMergeRequests(ctx context.Context, projectID int) ([]*MergeRequest, error)
 
 	// ListMergeRequestsFull returns open merge requests with all fields (including
 	// pipeline status and commit count) via a single GraphQL query.
