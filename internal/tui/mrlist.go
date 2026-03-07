@@ -141,7 +141,7 @@ func (m MRListModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	total := m.totalCount()
 	key := msg.String()
 
-	if key == "ctrl+c" {
+	if key == "ctrl+c" || key == "esc" {
 		return m, tea.Quit
 	}
 
@@ -277,7 +277,7 @@ func (m MRListModel) View() tea.View {
 		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame] + " Loading merge requests..."))
 		b.WriteString("\n\n")
 		b.WriteString("  ")
-		b.WriteString(sFaint.Styled(sKey.Styled("[R]") + " refresh  " + sKey.Styled("[r]") + " change repo  " + sKey.Styled("[q]") + " quit"))
+		b.WriteString(sFaint.Styled(sKey.Styled("[R]") + " refresh  " + sKey.Styled("[r]") + " change repo  " + sKey.Styled("[Esc]") + " quit"))
 		b.WriteString("\n")
 		return tea.NewView(b.String())
 	}
@@ -292,7 +292,7 @@ func (m MRListModel) View() tea.View {
 		}
 		b.WriteString("\n\n")
 		b.WriteString("  ")
-		b.WriteString(sFaint.Styled(sKey.Styled("[R]") + " refresh  " + sKey.Styled("[r]") + " change repo  " + sKey.Styled("[q]") + " quit"))
+		b.WriteString(sFaint.Styled(sKey.Styled("[R]") + " refresh  " + sKey.Styled("[r]") + " change repo  " + sKey.Styled("[Esc]") + " quit"))
 		b.WriteString("\n")
 		return tea.NewView(b.String())
 	}
@@ -350,8 +350,9 @@ func (m MRListModel) View() tea.View {
 			sKey.Styled("[a]") + " all  " +
 			sKey.Styled("[Shift+\u2191\u2193]") + " reorder  " +
 			sKey.Styled("[R]") + " refresh  " +
+			sKey.Styled("[r]") + " change repo  " +
 			sKey.Styled("[Enter]") + " start  " +
-			sKey.Styled("[q]") + " quit"))
+			sKey.Styled("[Esc]") + " quit"))
 	b.WriteString("\n")
 
 	return tea.NewView(b.String())

@@ -104,7 +104,7 @@ func (m TrainRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m TrainRunModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	switch key {
-	case "q", "ctrl+c":
+	case "q", "esc", "ctrl+c":
 		m.aborted = true
 		return m, func() tea.Msg { return trainAbortMsg{} }
 	}
@@ -193,11 +193,11 @@ func (m TrainRunModel) View() tea.View {
 	// Header
 	total := len(m.mrs)
 	if m.done {
-		b.WriteString("\n  ")
+		b.WriteString("  ")
 		b.WriteString(sSuccess.Styled(fmt.Sprintf("✓ Finished processing %d MRs", total)))
 		b.WriteString("\n\n")
 	} else if m.aborted {
-		b.WriteString("\n  ")
+		b.WriteString("  ")
 		b.WriteString(sError.Styled(fmt.Sprintf("✗ Aborted — processed %d of %d MRs", m.currentMR, total)))
 		b.WriteString("\n\n")
 	} else {
@@ -205,7 +205,7 @@ func (m TrainRunModel) View() tea.View {
 		if m.currentMR < len(m.mrs) {
 			currentIID = m.mrs[m.currentMR].IID
 		}
-		b.WriteString("\n  ")
+		b.WriteString("  ")
 		b.WriteString(sHeader.Styled(fmt.Sprintf("Merging %d of %d MRs", m.currentMR+1, total)))
 		b.WriteString(" · ")
 		b.WriteString(sRunning.Styled(fmt.Sprintf("!%d in progress", currentIID)))
@@ -267,7 +267,7 @@ func (m TrainRunModel) View() tea.View {
 	// Footer
 	if !m.done {
 		b.WriteString("  ")
-		b.WriteString(sFaint.Styled(sKey.Styled("[q]") + " abort"))
+		b.WriteString(sFaint.Styled(sKey.Styled("[Esc]") + " abort"))
 		b.WriteString("\n")
 	}
 

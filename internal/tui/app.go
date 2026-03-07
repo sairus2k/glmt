@@ -149,6 +149,16 @@ func (m AppModel) View() tea.View {
 	default:
 		view = tea.NewView("")
 	}
+
+	// Prepend common header
+	header := "\n  " + sHeader.Styled("glmt") + "\n\n"
+	view.Content = header + view.Content
+
+	// Adjust cursor for the 3 prepended lines
+	if view.Cursor != nil {
+		view.Cursor.Y += 3
+	}
+
 	view.AltScreen = true
 	view.WindowTitle = "glmt"
 	return view

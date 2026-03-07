@@ -100,6 +100,9 @@ func (m RepoPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "esc":
+			if m.search == "" {
+				return m, tea.Quit
+			}
 			m.search = ""
 			m.filtered = filterProjects(m.projects, m.search)
 			m.cursor = 0
@@ -139,29 +142,33 @@ func (m RepoPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m RepoPickerModel) View() tea.View {
 	var b strings.Builder
 
-	b.WriteString(sHeader.Styled("Select a repository"))
+	b.WriteString("  ")
+	b.WriteString(sBold.Styled("Select repository"))
 	b.WriteString("\n\n")
 
 	if m.search != "" {
-		b.WriteString(sBold.Styled("Search:") + " " + m.search)
+		b.WriteString("  " + sBold.Styled("Search:") + " " + m.search)
 	} else {
-		b.WriteString(sBold.Styled("Search:") + " " + sFaint.Styled("(type to filter)"))
+		b.WriteString("  " + sBold.Styled("Search:") + " " + sFaint.Styled("(type to filter)"))
 	}
 	b.WriteString("\n\n")
 
 	if len(m.projects) == 0 {
+		b.WriteString("  ")
 		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame] + " Loading projects..."))
 		b.WriteString("\n")
 	} else if len(m.filtered) == 0 {
+		b.WriteString("  ")
 		b.WriteString(sFaint.Styled("No matching projects."))
 		b.WriteString("\n")
 	} else {
 		for i, p := range m.filtered {
 			if i == m.cursor {
+				b.WriteString("  ")
 				b.WriteString(sCursor.Styled("> "))
 				b.WriteString(sSelected.Styled(p.PathWithNamespace))
 			} else {
-				b.WriteString("  ")
+				b.WriteString("    ")
 				b.WriteString(p.PathWithNamespace)
 			}
 			b.WriteString("\n")
@@ -169,11 +176,12 @@ func (m RepoPickerModel) View() tea.View {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(sFaint.Styled(sKey.Styled("[j/k]") + " navigate  " + sKey.Styled("[enter]") + " select  " + sKey.Styled("[esc]") + " clear search  " + sKey.Styled("[type]") + " filter"))
+	b.WriteString("  ")
+	b.WriteString(sFaint.Styled(sKey.Styled("[j/k]") + " navigate  " + sKey.Styled("[Enter]") + " select  " + sKey.Styled("[Esc]") + " clear/quit  " + sKey.Styled("[type]") + " filter"))
 
 	view := tea.NewView(b.String())
-	// Cursor after "Search: " (col 8) + search length
-	searchCol := 8 + len(m.search)
+	// Cursor after "  Search: " (col 10) + search length
+	searchCol := 10 + len(m.search)
 	view.Cursor = tea.NewCursor(searchCol, 2)
 	return view
 }

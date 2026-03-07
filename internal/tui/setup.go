@@ -239,11 +239,11 @@ func (m SetupModel) validateCmd() tea.Cmd {
 func (m SetupModel) View() tea.View {
 	var b strings.Builder
 
-	b.WriteString("\n  ")
-	b.WriteString(sHeader.Styled("glmt - GitLab Merge Train CLI"))
-	b.WriteString("\n\n")
 	b.WriteString("  ")
-	b.WriteString(sFaint.Styled("First-run setup"))
+	b.WriteString(sBold.Styled("Setup"))
+	b.WriteString("\n")
+	b.WriteString("  ")
+	b.WriteString(sFaint.Styled("Merge multiple GitLab MRs sequentially — rebase, wait for pipeline, merge."))
 	b.WriteString("\n\n")
 
 	var view tea.View
@@ -256,13 +256,13 @@ func (m SetupModel) View() tea.View {
 		b.WriteString(m.host)
 		b.WriteString("\n")
 		b.WriteString("\n  ")
-		b.WriteString(sFaint.Styled(sKey.Styled("Enter")+" to continue. "+sKey.Styled("Escape")+" to quit."))
+		b.WriteString(sFaint.Styled(sKey.Styled("[Enter]")+" continue  "+sKey.Styled("[Esc]")+" quit"))
 		b.WriteString("\n")
 
 		// Cursor after host text: "  GitLab host: " is col 15 + cursor pos
-		// Lines: 0=blank, 1=header, 2=blank, 3=subtitle, 4=blank, 5=host input
+		// Lines: 0=title, 1=description, 2=blank, 3=host input
 		view = tea.NewView(b.String())
-		view.Cursor = tea.NewCursor(15+m.cursor, 5)
+		view.Cursor = tea.NewCursor(15+m.cursor, 3)
 	case SetupStateToken:
 		b.WriteString("  ")
 		b.WriteString(sBold.Styled("GitLab host:"))
@@ -275,13 +275,13 @@ func (m SetupModel) View() tea.View {
 		b.WriteString(strings.Repeat("*", len(m.token)))
 		b.WriteString("\n")
 		b.WriteString("\n  ")
-		b.WriteString(sFaint.Styled(sKey.Styled("Enter")+" to validate. "+sKey.Styled("Escape")+" to go back."))
+		b.WriteString(sFaint.Styled(sKey.Styled("[Enter]")+" validate  "+sKey.Styled("[Esc]")+" back"))
 		b.WriteString("\n")
 
 		// Cursor after token text: "  Personal access token (api scope): " is col 37 + cursor pos
-		// Lines: 0=blank, 1=header, 2=blank, 3=subtitle, 4=blank, 5=host, 6=token input
+		// Lines: 0=title, 1=description, 2=blank, 3=host, 4=token input
 		view = tea.NewView(b.String())
-		view.Cursor = tea.NewCursor(37+m.cursor, 6)
+		view.Cursor = tea.NewCursor(37+m.cursor, 4)
 	case SetupStateValidating:
 		b.WriteString("  ")
 		b.WriteString(sBold.Styled("GitLab host:"))
@@ -319,7 +319,7 @@ func (m SetupModel) View() tea.View {
 		b.WriteString(sError.Styled("✗"))
 		fmt.Fprintf(&b, " Error: %s\n", m.err)
 		b.WriteString("\n  ")
-		b.WriteString(sFaint.Styled("Press any key to retry."))
+		b.WriteString(sFaint.Styled(sKey.Styled("[any key]") + " retry"))
 		b.WriteString("\n")
 
 		view = tea.NewView(b.String())
