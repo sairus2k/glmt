@@ -240,8 +240,10 @@ func createRootToken(t *testing.T, gitlabURL string) string {
 func createProject(t *testing.T, gitlabURL, token string) int {
 	t.Helper()
 
+	projectName := "glmt-e2e-test"
+
 	data := map[string]interface{}{
-		"name":                   "glmt-e2e-test",
+		"name":                   projectName,
 		"visibility":             "private",
 		"initialize_with_readme": true,
 		"default_branch":         "main",
@@ -254,6 +256,12 @@ func createProject(t *testing.T, gitlabURL, token string) int {
 
 	resp := apiDo(t, req)
 	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == 400 {
+		// Project may already exist due to a retried 502. Look it up by name.
+		_ = resp.Body.Close()
+		return findProjectByName(t, gitlabURL, token, projectName)
+	}
 
 	if resp.StatusCode != 201 {
 		respBody, _ := io.ReadAll(resp.Body)
@@ -268,6 +276,38 @@ func createProject(t *testing.T, gitlabURL, token string) int {
 	}
 
 	return project.ID
+}
+
+func findProjectByName(t *testing.T, gitlabURL, token, name string) int {
+	t.Helper()
+
+	req, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v4/projects?search=%s&owned=true", gitlabURL, name), nil)
+	req.Header.Set("PRIVATE-TOKEN", token)
+
+	resp := apiDo(t, req)
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != 200 {
+		respBody, _ := io.ReadAll(resp.Body)
+		t.Fatalf("Project search failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var projects []struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&projects); err != nil {
+		t.Fatalf("Failed to decode project search response: %v", err)
+	}
+
+	for _, p := range projects {
+		if p.Name == name {
+			return p.ID
+		}
+	}
+
+	t.Fatalf("Project %q not found after 400 response", name)
+	return 0
 }
 
 func createFile(t *testing.T, gitlabURL, token string, projectID int, branch, filePath, content string) {
