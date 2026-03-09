@@ -59,6 +59,18 @@ var (
 		BlockingDiscussionsResolved: true, CreatedAt: "2025-01-12T00:00:00Z",
 		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/46",
 	}
+	uncheckedMR = &gitlab.MergeRequest{
+		IID: 60, Title: "Add caching layer", Author: "judy",
+		HeadPipelineStatus: "success", DetailedMergeStatus: "unchecked",
+		BlockingDiscussionsResolved: true, CreatedAt: "2025-01-13T00:00:00Z",
+		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/60",
+	}
+	checkingMR = &gitlab.MergeRequest{
+		IID: 61, Title: "Fix race condition", Author: "karl",
+		HeadPipelineStatus: "success", DetailedMergeStatus: "checking",
+		BlockingDiscussionsResolved: true, CreatedAt: "2025-01-14T00:00:00Z",
+		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/61",
+	}
 )
 
 // allFixtureMRs returns a fresh slice of all test fixtures.
@@ -346,4 +358,93 @@ func TestMRList_ViewShowsSelectionCount(t *testing.T) {
 	viewStr := view.Content
 
 	assert.Contains(t, viewStr, "3 selected")
+}
+
+func TestMRList_UncheckedSetsRefreshing(t *testing.T) {
+	mrs := []*gitlab.MergeRequest{eligibleMR1, uncheckedMR}
+	m := loadModel(mrs)
+
+	assert.True(t, m.Refreshing(), "refreshing should be true when unchecked MRs present")
+}
+
+func TestMRList_NoUncheckedClearsRefreshing(t *testing.T) {
+	mrs := []*gitlab.MergeRequest{eligibleMR1, eligibleMR2, draftMR}
+	m := loadModel(mrs)
+
+	assert.False(t, m.Refreshing(), "refreshing should be false with only resolved statuses")
+}
+
+func TestMRList_BackgroundUpdatePreservesSelection(t *testing.T) {
+	// Initial load with unchecked MRs.
+	mrs := []*gitlab.MergeRequest{eligibleMR1, eligibleMR2, uncheckedMR}
+	m := loadModel(mrs)
+	assert.True(t, m.Refreshing())
+
+	// Select MR 42.
+	m = sendKey(m, " ")
+	assert.Equal(t, []int{42}, m.Selected())
+
+	// Move cursor to MR 38.
+	m = sendKey(m, "down")
+	assert.Equal(t, 1, m.Cursor())
+
+	// Simulate background refetch (loading is already false).
+	updated, _ := m.Update(mrsLoadedMsg{mrs: mrs})
+	m = updated.(MRListModel)
+
+	// Selection and cursor preserved.
+	assert.Equal(t, []int{42}, m.Selected())
+	assert.Equal(t, 1, m.Cursor())
+}
+
+func TestMRList_BackgroundUpdateClampsCursor(t *testing.T) {
+	// Load 3 eligible + 1 unchecked = 4 total items.
+	mrs := []*gitlab.MergeRequest{eligibleMR1, eligibleMR2, needRebaseMR, uncheckedMR}
+	m := loadModel(mrs)
+
+	// Move cursor to last item (index 3 = uncheckedMR in ineligible).
+	m = sendKey(m, "down")
+	m = sendKey(m, "down")
+	m = sendKey(m, "down")
+	assert.Equal(t, 3, m.Cursor())
+
+	// Background refetch with fewer MRs (unchecked resolved to eligible).
+	resolvedMR := &gitlab.MergeRequest{
+		IID: 60, Title: "Add caching layer", Author: "judy",
+		HeadPipelineStatus: "success", DetailedMergeStatus: "mergeable",
+		BlockingDiscussionsResolved: true, CreatedAt: "2025-01-13T00:00:00Z",
+	}
+	fewerMRs := []*gitlab.MergeRequest{eligibleMR1, resolvedMR}
+	updated, _ := m.Update(mrsLoadedMsg{mrs: fewerMRs})
+	m = updated.(MRListModel)
+
+	// Cursor clamped to new total - 1.
+	assert.Equal(t, 1, m.Cursor())
+	assert.False(t, m.Refreshing())
+}
+
+func TestMRList_SpinnerTicksWhenRefreshing(t *testing.T) {
+	mrs := []*gitlab.MergeRequest{eligibleMR1, checkingMR}
+	m := loadModel(mrs)
+	assert.True(t, m.Refreshing())
+
+	// Set refreshing manually since loadModel sets loading=false.
+	// refreshing should already be true from hasUncheckedMRs.
+	updated, cmd := m.Update(spinnerTickMsg{})
+	m = updated.(MRListModel)
+
+	assert.NotNil(t, cmd, "spinner tick should return next tick cmd when refreshing")
+	assert.Equal(t, 1, m.spinnerFrame)
+}
+
+func TestMRList_ViewShowsSpinnerBadge(t *testing.T) {
+	mrs := []*gitlab.MergeRequest{eligibleMR1, checkingMR, uncheckedMR}
+	m := loadModel(mrs)
+
+	view := m.View()
+	viewStr := view.Content
+
+	// The badge should contain the spinner frame character.
+	assert.Contains(t, viewStr, spinnerFrames[0]+" checking")
+	assert.Contains(t, viewStr, spinnerFrames[0]+" unchecked")
 }

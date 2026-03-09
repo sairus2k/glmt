@@ -283,20 +283,70 @@ func (m AppModel) updateMRList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refetchMRsMsg:
 		_ = msg
 		m.mrList.loading = true
+		m.mrList.refreshing = false // cancel background cycle
 		return m, tea.Batch(m.fetchMRs(), spinnerTick())
+	case backgroundRefetchMsg:
+		if m.mrList.refreshing {
+			return m, m.fetchMRs() // silent refetch, loading stays false
+		}
+		return m, nil
 	case startTrainMsg:
 		m.screen = ScreenTrainRun
 		m.trainRun = NewTrainRunModel(msg.mrs)
 		return m, tea.Batch(m.startTrain(msg.mrs), spinnerTick())
 	case mrsLoadedMsg:
+		wasLoading := m.mrList.loading
 		newList, cmd := m.mrList.Update(msg)
 		m.mrList = newList.(MRListModel)
-		return m, cmd
+		cmds := []tea.Cmd{cmd}
+		if m.mrList.refreshing {
+			if wasLoading {
+				// First load: trigger REST calls to kick merge status recalculation.
+				iids := collectUncheckedIIDs(m.mrList)
+				if len(iids) > 0 {
+					cmds = append(cmds, m.triggerMergeChecks(iids))
+				}
+				cmds = append(cmds, spinnerTick())
+			}
+			cmds = append(cmds, scheduleBackgroundRefetch())
+		}
+		return m, tea.Batch(cmds...)
 	}
 
 	newList, cmd := m.mrList.Update(msg)
 	m.mrList = newList.(MRListModel)
 	return m, cmd
+}
+
+// collectUncheckedIIDs returns IIDs of ineligible MRs with "unchecked" status.
+func collectUncheckedIIDs(m MRListModel) []int {
+	var iids []int
+	for _, imr := range m.ineligible {
+		if imr.Reason == "unchecked" {
+			iids = append(iids, imr.MR.IID)
+		}
+	}
+	return iids
+}
+
+// triggerMergeChecks fires GET requests for each IID to kick GitLab's mergeability recalculation.
+func (m AppModel) triggerMergeChecks(iids []int) tea.Cmd {
+	client := m.client
+	projectID := m.projectID
+	return func() tea.Msg {
+		for _, iid := range iids {
+			// Fire-and-forget: ignore errors.
+			_, _ = client.GetMergeRequest(context.Background(), projectID, iid)
+		}
+		return nil
+	}
+}
+
+// scheduleBackgroundRefetch returns a command that sends backgroundRefetchMsg after a delay.
+func scheduleBackgroundRefetch() tea.Cmd {
+	return tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
+		return backgroundRefetchMsg{}
+	})
 }
 
 func (m AppModel) updateTrainRun(msg tea.Msg) (tea.Model, tea.Cmd) {

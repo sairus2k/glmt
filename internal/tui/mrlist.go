@@ -18,6 +18,7 @@ type MRListModel struct {
 	cursor        int
 	repoPath      string
 	loading       bool
+	refreshing    bool // background refresh in progress (list visible, spinner badges animate)
 	spinnerFrame  int
 	errMsg        string
 	contentHeight int
@@ -45,6 +46,8 @@ type startTrainMsg struct {
 type changeRepoMsg struct{}
 
 type refetchMRsMsg struct{}
+
+type backgroundRefetchMsg struct{}
 
 // NewMRListModel creates a new MR list model for the given repo path.
 func NewMRListModel(repoPath string) MRListModel {
@@ -107,7 +110,7 @@ func (m MRListModel) isIneligibleIndex(idx int) bool {
 func (m MRListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case spinnerTickMsg:
-		if m.loading {
+		if m.loading || m.refreshing {
 			m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
 			return m, spinnerTick()
 		}
@@ -123,35 +126,96 @@ func (m MRListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m MRListModel) handleMRsLoaded(msg mrsLoadedMsg) MRListModel {
-	m.loading = false
-	m.eligible = nil
-	m.ineligible = nil
-	m.selected = make(map[int]bool)
-	m.cursor = 0
-	m.errMsg = ""
+	wasLoading := m.loading
 
-	if msg.err != nil {
-		m.errMsg = msg.err.Error()
+	if wasLoading {
+		// Initial load or manual refresh: reset everything.
+		m.loading = false
+		m.eligible = nil
+		m.ineligible = nil
+		m.selected = make(map[int]bool)
+		m.cursor = 0
+		m.scrollOffset = 0
+		m.errMsg = ""
+
+		if msg.err != nil {
+			m.errMsg = msg.err.Error()
+			m.refreshing = false
+			return m
+		}
+
+		mrs := classifyAndSort(msg.mrs)
+		m.eligible = mrs.eligible
+		m.ineligible = mrs.ineligible
+		m.refreshing = m.hasUncheckedMRs()
 		return m
 	}
 
-	// Sort all MRs by CreatedAt ascending first.
-	mrs := make([]*gitlab.MergeRequest, len(msg.mrs))
-	copy(mrs, msg.mrs)
+	// Background refetch: preserve selection, cursor, scroll.
+	if msg.err != nil {
+		// Silently ignore errors during background refetch.
+		return m
+	}
+
+	prevSelected := m.selected
+	mrs := classifyAndSort(msg.mrs)
+	m.eligible = mrs.eligible
+	m.ineligible = mrs.ineligible
+
+	// Restore selection by IID.
+	m.selected = make(map[int]bool)
+	for _, mr := range m.eligible {
+		if prevSelected[mr.IID] {
+			m.selected[mr.IID] = true
+		}
+	}
+
+	// Clamp cursor.
+	total := m.totalCount()
+	if total == 0 {
+		m.cursor = 0
+	} else if m.cursor >= total {
+		m.cursor = total - 1
+	}
+
+	m.refreshing = m.hasUncheckedMRs()
+	return m
+}
+
+// classifyResult holds classified MRs.
+type classifyResult struct {
+	eligible   []*gitlab.MergeRequest
+	ineligible []IneligibleMR
+}
+
+// classifyAndSort sorts MRs by CreatedAt and classifies them.
+func classifyAndSort(raw []*gitlab.MergeRequest) classifyResult {
+	mrs := make([]*gitlab.MergeRequest, len(raw))
+	copy(mrs, raw)
 	sort.Slice(mrs, func(i, j int) bool {
 		return mrs[i].CreatedAt < mrs[j].CreatedAt
 	})
 
+	var r classifyResult
 	for _, mr := range mrs {
 		ok, reason := classifyMR(mr)
 		if ok {
-			m.eligible = append(m.eligible, mr)
+			r.eligible = append(r.eligible, mr)
 		} else {
-			m.ineligible = append(m.ineligible, IneligibleMR{MR: mr, Reason: reason})
+			r.ineligible = append(r.ineligible, IneligibleMR{MR: mr, Reason: reason})
 		}
 	}
+	return r
+}
 
-	return m
+// hasUncheckedMRs returns true if any ineligible MR has "checking" or "unchecked" status.
+func (m MRListModel) hasUncheckedMRs() bool {
+	for _, imr := range m.ineligible {
+		if imr.Reason == "checking" || imr.Reason == "unchecked" {
+			return true
+		}
+	}
+	return false
 }
 
 func (m MRListModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -317,7 +381,11 @@ func (m MRListModel) computeLayout() tableLayout {
 		if mr.ApprovalCount > 0 {
 			l.maxApprovals = max(l.maxApprovals, ansi.StringWidth(fmt.Sprintf("✓ %d", mr.ApprovalCount)))
 		}
-		l.maxBadge = max(l.maxBadge, ansi.StringWidth(fmt.Sprintf("[%s]", imr.Reason)))
+		badgeText := fmt.Sprintf("[%s]", imr.Reason)
+		if imr.Reason == "checking" || imr.Reason == "unchecked" {
+			badgeText = fmt.Sprintf("[⠋ %s]", imr.Reason)
+		}
+		l.maxBadge = max(l.maxBadge, ansi.StringWidth(badgeText))
 	}
 
 	const prefixWidth = 4 // "> ● " or "  ○ " or "  ✗ "
@@ -538,7 +606,13 @@ func (m MRListModel) View() tea.View {
 		}
 		if lay.maxBadge > 0 {
 			lb.WriteString("  ")
-			lb.WriteString(padLeft(sWarning.Styled(fmt.Sprintf("[%s]", imr.Reason)), lay.maxBadge))
+			var badge string
+			if imr.Reason == "checking" || imr.Reason == "unchecked" {
+				badge = fmt.Sprintf("[%s %s]", spinnerFrames[m.spinnerFrame], imr.Reason)
+			} else {
+				badge = fmt.Sprintf("[%s]", imr.Reason)
+			}
+			lb.WriteString(padLeft(sWarning.Styled(badge), lay.maxBadge))
 		}
 
 		lineCount := 1
@@ -686,6 +760,11 @@ func (m MRListModel) Ineligible() []IneligibleMR {
 // SelectedCount returns the number of selected MRs.
 func (m MRListModel) SelectedCount() int {
 	return len(m.selected)
+}
+
+// Refreshing returns whether background refresh is active.
+func (m MRListModel) Refreshing() bool {
+	return m.refreshing
 }
 
 // currentMRURL returns the WebURL of the MR under the cursor.
