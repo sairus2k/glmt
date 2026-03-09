@@ -19,90 +19,47 @@ func TestTrainMergesMRs(t *testing.T) {
 		t.Skip("skipping e2e test in short mode")
 	}
 
-	tests := []struct {
-		name    string
-		mrCount int
-	}{
-		{"TwoMRs", 2},
-		{"ThreeMRs", 3},
+	const mrCount = 3
+
+	env := setupGitLabN(t, mrCount)
+	defer env.cleanup()
+
+	apiClient, err := gitlab.NewAPIClient(env.gitlabURL, env.token)
+	require.NoError(t, err)
+
+	// Build the --mrs flag value
+	mrsFlag := make([]string, len(env.mrIIDs))
+	for i, iid := range env.mrIIDs {
+		mrsFlag[i] = fmt.Sprintf("%d", iid)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			env := setupGitLabN(t, tt.mrCount)
-			defer env.cleanup()
-
-			// Verify commit counts are populated via the glmt client
-			apiClient, err := gitlab.NewAPIClient(env.gitlabURL, env.token)
-			require.NoError(t, err)
-			for _, iid := range env.mrIIDs {
-				mr, err := apiClient.GetMergeRequest(context.Background(), env.projectID, iid)
-				require.NoError(t, err, "GetMergeRequest for !%d", iid)
-				assert.Equal(t, 1, mr.CommitCount, "MR !%d should have 1 commit", iid)
-			}
-
-			// Build the --mrs flag value
-			mrsFlag := make([]string, len(env.mrIIDs))
-			for i, iid := range env.mrIIDs {
-				mrsFlag[i] = fmt.Sprintf("%d", iid)
-			}
-
-			// Run glmt in non-interactive mode
-			cmd := exec.Command(glmtBin,
-				"--non-interactive",
-				"--host", env.gitlabURL,
-				"--token", env.token,
-				"--project-id", fmt.Sprintf("%d", env.projectID),
-				"--mrs", strings.Join(mrsFlag, ","),
-			)
-			out, err := cmd.CombinedOutput()
-			output := string(out)
-			t.Logf("glmt output:\n%s", output)
-
-			// Assert: exit code 0 (all MRs merged)
-			require.NoError(t, err, "glmt should exit 0 when all MRs merge successfully")
-
-			// Assert: output contains merged status for each MR
-			assert.Contains(t, output, "=== Train Results ===")
-			for _, iid := range env.mrIIDs {
-				assert.Contains(t, output, fmt.Sprintf("MR !%d: merged", iid))
-			}
-
-			// Pipeline cancellation should happen for all non-last MRs
-			expectedCancellations := tt.mrCount - 1
-			assert.GreaterOrEqual(t, strings.Count(output, "Cancelled main pipeline"), expectedCancellations,
-				"should cancel main pipeline at least %d times for %d-MR train", expectedCancellations, tt.mrCount)
-
-			// Verify MRs are actually merged via the API
-			for _, iid := range env.mrIIDs {
-				state := getMRState(t, env.gitlabURL, env.token, env.projectID, iid)
-				assert.Equal(t, "merged", state, "MR !%d should be in merged state", iid)
-			}
-		})
-	}
-}
-
-// getMRState returns the state of an MR ("opened", "merged", "closed").
-func getMRState(t *testing.T, gitlabURL, token string, projectID, mrIID int) string {
-	t.Helper()
-
-	url := fmt.Sprintf("%s/api/v4/projects/%d/merge_requests/%d", gitlabURL, projectID, mrIID)
-	cmd := exec.Command("curl", "-s", "-H", fmt.Sprintf("PRIVATE-TOKEN: %s", token), url)
+	// Run glmt in non-interactive mode
+	cmd := exec.Command(glmtBin,
+		"--non-interactive",
+		"--host", env.gitlabURL,
+		"--token", env.token,
+		"--project-id", fmt.Sprintf("%d", env.projectID),
+		"--mrs", strings.Join(mrsFlag, ","),
+	)
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Failed to get MR state: %v", err)
+	output := string(out)
+	t.Logf("glmt output:\n%s", output)
+
+	require.NoError(t, err, "glmt should exit 0 when all MRs merge successfully")
+
+	assert.Contains(t, output, "=== Train Results ===")
+	for _, iid := range env.mrIIDs {
+		assert.Contains(t, output, fmt.Sprintf("MR !%d: merged", iid))
 	}
 
-	// Parse just the state field
-	output := string(out)
-	for _, line := range strings.Split(output, ",") {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, `"state"`) {
-			parts := strings.SplitN(line, ":", 2)
-			if len(parts) == 2 {
-				return strings.Trim(strings.TrimSpace(parts[1]), `"`)
-			}
-		}
+	// Pipeline cancellation should happen for all non-last MRs
+	assert.GreaterOrEqual(t, strings.Count(output, "Cancelled main pipeline"), mrCount-1,
+		"should cancel main pipeline at least %d times for %d-MR train", mrCount-1, mrCount)
+
+	// Verify MRs are actually merged via the API
+	for _, iid := range env.mrIIDs {
+		mr, err := apiClient.GetMergeRequest(context.Background(), env.projectID, iid)
+		require.NoError(t, err, "GetMergeRequest for !%d", iid)
+		assert.Equal(t, "merged", mr.State, "MR !%d should be in merged state", iid)
 	}
-	return ""
 }

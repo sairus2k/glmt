@@ -383,6 +383,7 @@ func convertMergeRequest(mr *goGitLab.MergeRequest) *MergeRequest {
 
 	return &MergeRequest{
 		IID:                         int(mr.IID),
+		State:                       mr.State,
 		Title:                       mr.Title,
 		Author:                      author,
 		SourceBranch:                mr.SourceBranch,

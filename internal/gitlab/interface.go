@@ -5,6 +5,7 @@ import "context"
 // MergeRequest represents a GitLab merge request with fields needed for train execution.
 type MergeRequest struct {
 	IID                         int
+	State                       string // opened, merged, closed
 	Title                       string
 	Author                      string
 	SourceBranch                string
