@@ -16,7 +16,7 @@ archives:
   - formats:
       - tar.gz
 
-homebrew_casks:
+brews:
   - repository:
       owner: sairus2k
       name: homebrew-tap
