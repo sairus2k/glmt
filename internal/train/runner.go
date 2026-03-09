@@ -199,23 +199,47 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 	// Step 4: CANCEL MAIN PIPELINE (if more MRs remain)
 	if !isLast {
 		r.log(mr.IID, "cancel-pipeline", "Cancelling main pipeline...")
-		pipelines, err := r.client.ListPipelines(ctx, r.projectID, mr.TargetBranch, "running")
-		if err == nil && len(pipelines) > 0 {
-			*lastCancelledPipelineID = pipelines[0].ID
-			if cancelErr := r.client.CancelPipeline(ctx, r.projectID, pipelines[0].ID); cancelErr != nil {
+		pipeline, err := r.findCancellablePipeline(ctx, mr.TargetBranch)
+		if err != nil {
+			r.log(mr.IID, "cancel-pipeline", fmt.Sprintf("Failed to list pipelines: %v", err))
+		} else if pipeline == nil {
+			r.log(mr.IID, "cancel-pipeline", "No main pipeline found, retrying...")
+			select {
+			case <-ctx.Done():
+			case <-time.After(r.PollPipelineInterval):
+				pipeline, err = r.findCancellablePipeline(ctx, mr.TargetBranch)
+				if err != nil {
+					r.log(mr.IID, "cancel-pipeline", fmt.Sprintf("Failed to list pipelines on retry: %v", err))
+				}
+			}
+		}
+		if pipeline != nil {
+			*lastCancelledPipelineID = pipeline.ID
+			if cancelErr := r.client.CancelPipeline(ctx, r.projectID, pipeline.ID); cancelErr != nil {
 				r.log(mr.IID, "cancel-pipeline", fmt.Sprintf("Failed to cancel pipeline: %v", cancelErr))
 			} else {
-				r.log(mr.IID, "cancel-pipeline", fmt.Sprintf("Cancelled main pipeline #%d", pipelines[0].ID))
+				r.log(mr.IID, "cancel-pipeline", fmt.Sprintf("Cancelled main pipeline #%d", pipeline.ID))
 			}
-		} else if err != nil {
-			r.log(mr.IID, "cancel-pipeline", fmt.Sprintf("Failed to list pipelines: %v", err))
-		} else {
-			r.log(mr.IID, "cancel-pipeline", "No running main pipeline found")
+		} else if err == nil {
+			r.log(mr.IID, "cancel-pipeline", "No main pipeline found after retry")
 		}
 	}
 	// Step 5: If last MR and it merged, let main pipeline run naturally (done implicitly)
 
 	return MRStatusMerged, ""
+}
+
+func (r *Runner) findCancellablePipeline(ctx context.Context, ref string) (*gitlab.Pipeline, error) {
+	for _, status := range []string{"running", "pending", "created"} {
+		pipelines, err := r.client.ListPipelines(ctx, r.projectID, ref, status)
+		if err != nil {
+			return nil, err
+		}
+		if len(pipelines) > 0 {
+			return pipelines[0], nil
+		}
+	}
+	return nil, nil
 }
 
 func (r *Runner) waitForMergeReady(ctx context.Context, mrIID int) (*gitlab.MergeRequest, error) {

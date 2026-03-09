@@ -64,6 +64,53 @@ func TestTrainMergesAllMRs(t *testing.T) {
 		assert.Contains(t, output, fmt.Sprintf("MR !%d: merged", iid))
 	}
 
+	// Assert: pipeline cancellation happened for non-last MR
+	assert.Contains(t, output, "Cancelled main pipeline")
+
+	// Verify MRs are actually merged via the API
+	for _, iid := range env.mrIIDs {
+		state := getMRState(t, env.gitlabURL, env.token, env.projectID, iid)
+		assert.Equal(t, "merged", state, "MR !%d should be in merged state", iid)
+	}
+}
+
+// TestTrainThreeMRs tests the train with 3 MRs, exercising pipeline cancellation twice.
+func TestTrainThreeMRs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping e2e test in short mode")
+	}
+
+	binPath := buildGlmt(t)
+	env := setupGitLabN(t, 3)
+	defer env.cleanup()
+
+	mrsFlag := make([]string, len(env.mrIIDs))
+	for i, iid := range env.mrIIDs {
+		mrsFlag[i] = fmt.Sprintf("%d", iid)
+	}
+
+	cmd := exec.Command(binPath,
+		"--non-interactive",
+		"--host", env.gitlabURL,
+		"--token", env.token,
+		"--project-id", fmt.Sprintf("%d", env.projectID),
+		"--mrs", strings.Join(mrsFlag, ","),
+	)
+	out, err := cmd.CombinedOutput()
+	output := string(out)
+	t.Logf("glmt output:\n%s", output)
+
+	require.NoError(t, err, "glmt should exit 0 when all MRs merge successfully")
+
+	assert.Contains(t, output, "=== Train Results ===")
+	for _, iid := range env.mrIIDs {
+		assert.Contains(t, output, fmt.Sprintf("MR !%d: merged", iid))
+	}
+
+	// With 3 MRs, pipeline cancellation should happen at least twice (for MR 1 and MR 2)
+	assert.GreaterOrEqual(t, strings.Count(output, "Cancelled main pipeline"), 2,
+		"should cancel main pipeline at least twice for 3-MR train")
+
 	// Verify MRs are actually merged via the API
 	for _, iid := range env.mrIIDs {
 		state := getMRState(t, env.gitlabURL, env.token, env.projectID, iid)

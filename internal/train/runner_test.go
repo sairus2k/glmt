@@ -660,6 +660,98 @@ func TestRunnerRun(t *testing.T) {
 				assert.Equal(t, expected, methods)
 			},
 		},
+		{
+			name: "cancels pending pipeline when no running pipeline",
+			mrs: []*gitlab.MergeRequest{
+				makeMR(1, "MR 1"),
+				makeMR(2, "MR 2"),
+			},
+			setup: func(m *MockClient) {
+				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					return &gitlab.MergeRequest{
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
+						DetailedMergeStatus: "mergeable",
+					}, nil
+				}
+				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
+					if ref == "main" && status == "running" {
+						return nil, nil // no running pipeline
+					}
+					if ref == "main" && status == "pending" {
+						return []*gitlab.Pipeline{
+							{ID: 101, Status: "pending", Ref: "main"},
+						}, nil
+					}
+					if ref == "main" && status == "" {
+						return []*gitlab.Pipeline{
+							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
+						}, nil
+					}
+					return nil, nil
+				}
+			},
+			assertResult: func(t *testing.T, result *Result) {
+				require.Len(t, result.MRResults, 2)
+				assert.Equal(t, MRStatusMerged, result.MRResults[0].Status)
+				assert.Equal(t, MRStatusMerged, result.MRResults[1].Status)
+			},
+			assertCalls: func(t *testing.T, m *MockClient) {
+				cancelCalls := m.CallsTo("CancelPipeline")
+				require.Len(t, cancelCalls, 1)
+				assert.Equal(t, 101, cancelCalls[0].Args[1], "should cancel pending pipeline 101")
+			},
+		},
+		{
+			name: "retries once when no pipeline found immediately",
+			mrs: []*gitlab.MergeRequest{
+				makeMR(1, "MR 1"),
+				makeMR(2, "MR 2"),
+			},
+			setup: func(m *MockClient) {
+				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					return &gitlab.MergeRequest{
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
+						DetailedMergeStatus: "mergeable",
+					}, nil
+				}
+				listCallCount := 0
+				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
+					if ref == "main" && status == "" {
+						return []*gitlab.Pipeline{
+							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
+						}, nil
+					}
+					if ref == "main" && (status == "running" || status == "pending" || status == "created") {
+						listCallCount++
+						// First 3 calls (running, pending, created) return nothing
+						// On retry, the 4th call (running) returns a pipeline
+						if listCallCount > 3 {
+							return []*gitlab.Pipeline{
+								{ID: 102, Status: "running", Ref: "main"},
+							}, nil
+						}
+						return nil, nil
+					}
+					return nil, nil
+				}
+			},
+			assertResult: func(t *testing.T, result *Result) {
+				require.Len(t, result.MRResults, 2)
+				assert.Equal(t, MRStatusMerged, result.MRResults[0].Status)
+				assert.Equal(t, MRStatusMerged, result.MRResults[1].Status)
+			},
+			assertCalls: func(t *testing.T, m *MockClient) {
+				cancelCalls := m.CallsTo("CancelPipeline")
+				require.Len(t, cancelCalls, 1)
+				assert.Equal(t, 102, cancelCalls[0].Args[1], "should cancel pipeline 102 found on retry")
+				// Should have 3 (first round) + at least 1 (retry round) ListPipelines calls for cancel
+				// plus 1 for main pipeline wait = varies, but cancel should have been called
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -423,6 +423,161 @@ check_interval = 3
 	return runnerContainer
 }
 
+// setupGitLabN is like setupGitLab but creates N test MRs.
+func setupGitLabN(t *testing.T, n int) *testEnv {
+	t.Helper()
+	ctx := context.Background()
+
+	t.Log("Creating Docker network...")
+	net, err := network.New(ctx)
+	if err != nil {
+		t.Fatalf("Failed to create Docker network: %v", err)
+	}
+	networkName := net.Name
+
+	t.Log("Starting GitLab CE container (this takes a few minutes)...")
+	gitlabReq := testcontainers.ContainerRequest{
+		Image:        "gitlab/gitlab-ce:17.4.0-ce.0",
+		ExposedPorts: []string{"80/tcp"},
+		Networks:     []string{networkName},
+		NetworkAliases: map[string][]string{
+			networkName: {"gitlab"},
+		},
+		Env: map[string]string{
+			"GITLAB_OMNIBUS_CONFIG": strings.Join([]string{
+				"external_url 'http://gitlab'",
+				"gitlab_rails['initial_root_password'] = 'glmt-test-password-123'",
+				"puma['worker_processes'] = 0",
+				"sidekiq['concurrency'] = 2",
+				"postgresql['shared_buffers'] = '128MB'",
+				"prometheus_monitoring['enable'] = false",
+				"alertmanager['enable'] = false",
+				"gitlab_kas['enable'] = false",
+				"registry['enable'] = false",
+				"mattermost['enable'] = false",
+				"gitlab_pages['enable'] = false",
+				"gitlab_rails['gitlab_shell_ssh_port'] = 2222",
+			}, "; "),
+		},
+	}
+
+	gitlabContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: gitlabReq,
+		Started:          true,
+	})
+	if err != nil {
+		t.Fatalf("Failed to start GitLab container: %v", err)
+	}
+
+	mappedPort, err := gitlabContainer.MappedPort(ctx, "80")
+	if err != nil {
+		t.Fatalf("Failed to get mapped port: %v", err)
+	}
+
+	hostIP, err := gitlabContainer.Host(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get container host: %v", err)
+	}
+
+	gitlabURL := fmt.Sprintf("http://%s:%s", hostIP, mappedPort.Port())
+	t.Logf("GitLab CE available at %s", gitlabURL)
+
+	waitForAPI(t, gitlabURL)
+
+	token := createRootToken(t, gitlabURL)
+	t.Log("Created root access token")
+
+	projectID := createProject(t, gitlabURL, token)
+	t.Logf("Created test project with ID %d", projectID)
+
+	createFile(t, gitlabURL, token, projectID, "main", ".gitlab-ci.yml", `
+test:
+  script:
+    - "true"
+  tags:
+    - shared
+`)
+	t.Log("Created .gitlab-ci.yml on main branch")
+
+	runnerContainer := startRunner(t, ctx, networkName, gitlabURL, token)
+	t.Log("Runner sidecar started")
+
+	waitForAPI(t, gitlabURL)
+
+	mrIIDs := createTestMRsN(t, gitlabURL, token, projectID, n)
+	t.Logf("Created %d test MRs: %v", len(mrIIDs), mrIIDs)
+
+	waitForMRPipelines(t, gitlabURL, token, projectID, mrIIDs)
+	t.Log("All MR pipelines passed")
+
+	return &testEnv{
+		gitlabURL: gitlabURL,
+		token:     token,
+		projectID: projectID,
+		mrIIDs:    mrIIDs,
+		cleanup: func() {
+			_ = runnerContainer.Terminate(ctx)
+			_ = gitlabContainer.Terminate(ctx)
+			_ = net.Remove(ctx)
+		},
+	}
+}
+
+func createTestMRsN(t *testing.T, gitlabURL, token string, projectID, n int) []int {
+	t.Helper()
+
+	var mrIIDs []int
+
+	for i := 0; i < n; i++ {
+		branchName := fmt.Sprintf("feature-%c", 'a'+i)
+		fileName := fmt.Sprintf("feature_%c.txt", 'a'+i)
+		content := fmt.Sprintf("Feature %c content\n", 'A'+i)
+		mrTitle := fmt.Sprintf("Add feature %c", 'A'+i)
+
+		brData := map[string]interface{}{
+			"branch": branchName,
+			"ref":    "main",
+		}
+		body, _ := json.Marshal(brData)
+		req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v4/projects/%d/repository/branches", gitlabURL, projectID), bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("PRIVATE-TOKEN", token)
+		resp := apiDo(t, req)
+		_ = resp.Body.Close()
+
+		createFile(t, gitlabURL, token, projectID, branchName, fileName, content)
+
+		mrData := map[string]interface{}{
+			"source_branch": branchName,
+			"target_branch": "main",
+			"title":         mrTitle,
+		}
+		mrBody, _ := json.Marshal(mrData)
+		mrReq, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v4/projects/%d/merge_requests", gitlabURL, projectID), bytes.NewReader(mrBody))
+		mrReq.Header.Set("Content-Type", "application/json")
+		mrReq.Header.Set("PRIVATE-TOKEN", token)
+		mrResp := apiDo(t, mrReq)
+
+		if mrResp.StatusCode != 201 {
+			respBody, _ := io.ReadAll(mrResp.Body)
+			_ = mrResp.Body.Close()
+			t.Fatalf("MR creation failed for %s with status %d: %s", branchName, mrResp.StatusCode, string(respBody))
+		}
+
+		var mr struct {
+			IID int `json:"iid"`
+		}
+		if err := json.NewDecoder(mrResp.Body).Decode(&mr); err != nil {
+			_ = mrResp.Body.Close()
+			t.Fatalf("Failed to decode MR response: %v", err)
+		}
+		_ = mrResp.Body.Close()
+		mrIIDs = append(mrIIDs, mr.IID)
+	}
+
+	return mrIIDs
+}
+
 func createTestMRs(t *testing.T, gitlabURL, token string, projectID int) []int {
 	t.Helper()
 
