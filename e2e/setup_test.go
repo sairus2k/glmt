@@ -10,8 +10,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,35 +18,8 @@ import (
 	"github.com/testcontainers/testcontainers-go/network"
 )
 
-// glmtBin holds the path to the pre-built glmt binary, set by TestMain.
-var glmtBin string
-
 func TestMain(m *testing.M) {
-	tmpDir, err := os.MkdirTemp("", "glmt-e2e-*")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create temp dir: %v\n", err)
-		os.Exit(1)
-	}
-
-	binPath := filepath.Join(tmpDir, "glmt")
-	cmd := exec.Command("go", "build", "-o", binPath, "./cmd/glmt/")
-	// Run from repo root regardless of where `go test` sets the working dir.
-	wd, _ := os.Getwd()
-	if strings.HasSuffix(wd, "/e2e") {
-		cmd.Dir = wd[:len(wd)-4]
-	}
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to build glmt: %v\n%s\n", err, string(out))
-		os.Remove(binPath)
-		os.Remove(tmpDir)
-		os.Exit(1)
-	}
-
-	glmtBin = binPath
-	code := m.Run()
-	os.RemoveAll(tmpDir)
-	os.Exit(code)
+	os.Exit(m.Run())
 }
 
 // testEnv holds references to the running GitLab container and test data.
@@ -56,6 +27,7 @@ type testEnv struct {
 	gitlabURL string
 	token     string
 	projectID int
+	repoPath  string
 	mrIIDs    []int
 	cleanup   func()
 }
@@ -440,6 +412,7 @@ test:
 		gitlabURL: gitlabURL,
 		token:     token,
 		projectID: projectID,
+		repoPath:  "root/glmt-e2e-test",
 		mrIIDs:    mrIIDs,
 		cleanup: func() {
 			_ = runnerContainer.Terminate(ctx)
