@@ -82,18 +82,6 @@ func TestTrainMergesMRs(t *testing.T) {
 	}
 }
 
-// TestTrainSkipsFailedPipeline tests that an MR with a failing pipeline is skipped.
-func TestTrainSkipsFailedPipeline(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
-	}
-
-	// This test would require more sophisticated setup (a branch with a failing CI).
-	// For now, we test the core happy path above. Additional failure scenarios
-	// are covered by the unit tests in internal/train/runner_test.go.
-	t.Skip("TODO: implement failure scenario e2e test")
-}
-
 // getMRState returns the state of an MR ("opened", "merged", "closed").
 func getMRState(t *testing.T, gitlabURL, token string, projectID, mrIID int) string {
 	t.Helper()
