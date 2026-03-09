@@ -47,12 +47,25 @@ var (
 		BlockingDiscussionsResolved: false,
 		WebURL:                      "https://gitlab.com/myteam/myrepo/-/merge_requests/44",
 	}
+	unresolvedStatusMR = &gitlab.MergeRequest{
+		IID: 45, Title: "Refactor logging", Author: "heidi",
+		HeadPipelineStatus: "success", DetailedMergeStatus: "discussions_not_resolved",
+		BlockingDiscussionsResolved: true,
+		WebURL:                      "https://gitlab.com/myteam/myrepo/-/merge_requests/45",
+	}
+	needRebaseMR = &gitlab.MergeRequest{
+		IID: 46, Title: "Upgrade Go version", Author: "ivan",
+		HeadPipelineStatus: "success", DetailedMergeStatus: "need_rebase",
+		BlockingDiscussionsResolved: true, CreatedAt: "2025-01-12T00:00:00Z",
+		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/46",
+	}
 )
 
 // allFixtureMRs returns a fresh slice of all test fixtures.
 func allFixtureMRs() []*gitlab.MergeRequest {
 	return []*gitlab.MergeRequest{
 		eligibleMR1, eligibleMR2, draftMR, runningMR, conflictMR, unresolvedMR,
+		unresolvedStatusMR, needRebaseMR,
 	}
 }
 
@@ -99,12 +112,13 @@ func sendKeyCmd(m MRListModel, key string) (MRListModel, tea.Cmd) {
 func TestMRList_Classification(t *testing.T) {
 	m := loadModel(allFixtureMRs())
 
-	assert.Len(t, m.Eligible(), 2)
-	assert.Len(t, m.Ineligible(), 4)
+	assert.Len(t, m.Eligible(), 3)
+	assert.Len(t, m.Ineligible(), 5)
 
 	// Check eligible MRs are the right ones (sorted by CreatedAt asc).
 	assert.Equal(t, 42, m.Eligible()[0].IID)
 	assert.Equal(t, 38, m.Eligible()[1].IID)
+	assert.Equal(t, 46, m.Eligible()[2].IID) // need_rebase is eligible
 
 	// Check ineligible reasons.
 	reasons := make(map[int]string)
@@ -113,8 +127,9 @@ func TestMRList_Classification(t *testing.T) {
 	}
 	assert.Equal(t, "draft", reasons[51])
 	assert.Equal(t, "pipeline running", reasons[47])
-	assert.Equal(t, "conflicts", reasons[40])
+	assert.Equal(t, "broken_status", reasons[40])
 	assert.Equal(t, "unresolved threads", reasons[44])
+	assert.Equal(t, "unresolved threads", reasons[45])
 }
 
 func TestMRList_CursorMovement(t *testing.T) {
@@ -172,8 +187,8 @@ func TestMRList_SelectAll(t *testing.T) {
 	m := loadModel(allFixtureMRs())
 
 	m = sendKey(m, "a")
-	assert.Equal(t, 2, m.SelectedCount())
-	assert.Equal(t, []int{38, 42}, m.Selected())
+	assert.Equal(t, 3, m.SelectedCount())
+	assert.Equal(t, []int{38, 42, 46}, m.Selected())
 }
 
 func TestMRList_DeselectAll(t *testing.T) {
@@ -181,7 +196,7 @@ func TestMRList_DeselectAll(t *testing.T) {
 
 	// Select all, then deselect all.
 	m = sendKey(m, "a")
-	assert.Equal(t, 2, m.SelectedCount())
+	assert.Equal(t, 3, m.SelectedCount())
 
 	m = sendKey(m, "A")
 	assert.Equal(t, 0, m.SelectedCount())
@@ -191,10 +206,11 @@ func TestMRList_DeselectAll(t *testing.T) {
 func TestMRList_CannotSelectIneligible(t *testing.T) {
 	m := loadModel(allFixtureMRs())
 
-	// Move cursor to ineligible section (past 2 eligible MRs).
+	// Move cursor to ineligible section (past 3 eligible MRs).
 	m = sendKey(m, "down")
 	m = sendKey(m, "down")
-	assert.Equal(t, 2, m.Cursor()) // First ineligible index.
+	m = sendKey(m, "down")
+	assert.Equal(t, 3, m.Cursor()) // First ineligible index.
 
 	// Try to toggle selection — should do nothing.
 	m = sendKey(m, " ")
@@ -285,7 +301,7 @@ func TestMRList_ViewShowsBadges(t *testing.T) {
 
 	assert.Contains(t, viewStr, "[draft]")
 	assert.Contains(t, viewStr, "[pipeline running]")
-	assert.Contains(t, viewStr, "[conflicts]")
+	assert.Contains(t, viewStr, "[broken_status]")
 	assert.Contains(t, viewStr, "[unresolved threads]")
 }
 
@@ -298,6 +314,10 @@ func TestMRList_CurrentMRURL(t *testing.T) {
 	// Move to second eligible MR.
 	m = sendKey(m, "j")
 	assert.Equal(t, eligibleMR2.WebURL, m.currentMRURL())
+
+	// Move to third eligible MR (need_rebase).
+	m = sendKey(m, "j")
+	assert.Equal(t, needRebaseMR.WebURL, m.currentMRURL())
 
 	// Move into ineligible section (first ineligible is draftMR after sorting).
 	m = sendKey(m, "j")
@@ -325,5 +345,5 @@ func TestMRList_ViewShowsSelectionCount(t *testing.T) {
 	view := m.View()
 	viewStr := view.Content
 
-	assert.Contains(t, viewStr, "2 selected")
+	assert.Contains(t, viewStr, "3 selected")
 }

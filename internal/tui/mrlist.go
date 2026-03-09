@@ -71,8 +71,21 @@ func classifyMR(mr *gitlab.MergeRequest) (eligible bool, reason string) {
 	if mr.HeadPipelineStatus != "success" {
 		return false, "pipeline failed"
 	}
-	if mr.DetailedMergeStatus != "mergeable" {
-		return false, "conflicts"
+	switch mr.DetailedMergeStatus {
+	case "mergeable", "need_rebase":
+		// mergeable: ready; need_rebase: train handles rebase
+	case "discussions_not_resolved":
+		return false, "unresolved threads"
+	case "not_approved":
+		return false, "not approved"
+	case "blocked_status":
+		return false, "blocked"
+	case "requested_changes":
+		return false, "requested changes"
+	case "checking", "unchecked":
+		return false, mr.DetailedMergeStatus
+	default:
+		return false, mr.DetailedMergeStatus
 	}
 	if !mr.BlockingDiscussionsResolved {
 		return false, "unresolved threads"
