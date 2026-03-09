@@ -47,6 +47,7 @@ type Runner struct {
 	PollRebaseInterval       time.Duration
 	PollPipelineInterval     time.Duration
 	MaxCancelPipelineRetries int
+	MaxMergeStatusRetries    int
 }
 
 // NewRunner creates a new train runner.
@@ -58,6 +59,7 @@ func NewRunner(client gitlab.Client, projectID int, logger Logger) *Runner {
 		PollRebaseInterval:       2 * time.Second,
 		PollPipelineInterval:     10 * time.Second,
 		MaxCancelPipelineRetries: 3,
+		MaxMergeStatusRetries:    5,
 	}
 }
 
@@ -268,6 +270,7 @@ func (r *Runner) findCancellablePipeline(ctx context.Context, ref string) (*gitl
 }
 
 func (r *Runner) waitForMergeReady(ctx context.Context, mrIID int) (*gitlab.MergeRequest, error) {
+	staleRetries := 0
 	for {
 		mr, err := r.client.GetMergeRequest(ctx, r.projectID, mrIID)
 		if err != nil {
@@ -278,9 +281,13 @@ func (r *Runner) waitForMergeReady(ctx context.Context, mrIID int) (*gitlab.Merg
 		case "mergeable":
 			return mr, nil
 		case "checking", "unchecked":
-			// Still checking, poll again
+			staleRetries = 0 // reset — GitLab is actively recalculating
 		default:
-			return mr, fmt.Errorf("merge status: %s", mr.DetailedMergeStatus)
+			staleRetries++
+			if staleRetries > r.MaxMergeStatusRetries {
+				return mr, fmt.Errorf("merge status: %s", mr.DetailedMergeStatus)
+			}
+			r.log(mrIID, "merge", fmt.Sprintf("Merge status is '%s', retrying (%d/%d)...", mr.DetailedMergeStatus, staleRetries, r.MaxMergeStatusRetries))
 		}
 
 		select {

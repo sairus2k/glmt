@@ -933,6 +933,49 @@ func TestRunnerRun(t *testing.T) {
 				assert.Len(t, pipelineCalls, 2, "should poll pipeline twice due to stale SHA")
 			},
 		},
+		{
+			name: "stale merge status retries then succeeds",
+			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
+			setup: func(m *MockClient) {
+				getMRCallCount := 0
+				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					getMRCallCount++
+					status := "conflict"
+					if getMRCallCount >= 3 {
+						status = "mergeable"
+					}
+					return &gitlab.MergeRequest{
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
+						DetailedMergeStatus: status,
+					}, nil
+				}
+				listEmptyCount := 0
+				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
+					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
+						return []*gitlab.Pipeline{
+							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
+						}, nil
+					}
+					return nil, nil
+				}
+			},
+			assertResult: func(t *testing.T, result *Result) {
+				require.Len(t, result.MRResults, 1)
+				assert.Equal(t, MRStatusMerged, result.MRResults[0].Status)
+			},
+			assertCalls: func(t *testing.T, m *MockClient) {
+				getMRCalls := m.CallsTo("GetMergeRequest")
+				assert.GreaterOrEqual(t, len(getMRCalls), 3, "should retry stale merge status")
+			},
+		},
 	}
 
 	for _, tt := range tests {
