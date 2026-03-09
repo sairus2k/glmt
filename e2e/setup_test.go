@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,37 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/network"
 )
+
+// glmtBin holds the path to the pre-built glmt binary, set by TestMain.
+var glmtBin string
+
+func TestMain(m *testing.M) {
+	tmpDir, err := os.MkdirTemp("", "glmt-e2e-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to create temp dir: %v\n", err)
+		os.Exit(1)
+	}
+
+	binPath := filepath.Join(tmpDir, "glmt")
+	cmd := exec.Command("go", "build", "-o", binPath, "./cmd/glmt/")
+	// Run from repo root regardless of where `go test` sets the working dir.
+	wd, _ := os.Getwd()
+	if strings.HasSuffix(wd, "/e2e") {
+		cmd.Dir = wd[:len(wd)-4]
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to build glmt: %v\n%s\n", err, string(out))
+		os.Remove(binPath)
+		os.Remove(tmpDir)
+		os.Exit(1)
+	}
+
+	glmtBin = binPath
+	code := m.Run()
+	os.RemoveAll(tmpDir)
+	os.Exit(code)
+}
 
 // testEnv holds references to the running GitLab container and test data.
 type testEnv struct {
@@ -709,29 +741,4 @@ func getMRPipelineStatus(t *testing.T, gitlabURL, token string, projectID, mrIID
 		return ""
 	}
 	return mr.HeadPipeline.Status
-}
-
-func buildGlmt(t *testing.T) string {
-	t.Helper()
-
-	binPath := t.TempDir() + "/glmt"
-	cmd := exec.Command("go", "build", "-o", binPath, "./cmd/glmt/")
-	cmd.Dir = projectRoot(t)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Failed to build glmt: %v\n%s", err, string(out))
-	}
-	return binPath
-}
-
-func projectRoot(t *testing.T) string {
-	t.Helper()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get working directory: %v", err)
-	}
-	if strings.HasSuffix(wd, "/e2e") {
-		return wd[:len(wd)-4]
-	}
-	return wd
 }

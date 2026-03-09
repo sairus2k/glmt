@@ -21,8 +21,7 @@ func TestTrainMergesAllMRs(t *testing.T) {
 		t.Skip("skipping e2e test in short mode")
 	}
 
-	// Build glmt binary
-	binPath := buildGlmt(t)
+	binPath := glmtBin
 
 	// Start GitLab and seed data
 	env := setupGitLab(t)
@@ -80,7 +79,7 @@ func TestTrainThreeMRs(t *testing.T) {
 		t.Skip("skipping e2e test in short mode")
 	}
 
-	binPath := buildGlmt(t)
+	binPath := glmtBin
 	env := setupGitLabN(t, 3)
 	defer env.cleanup()
 
