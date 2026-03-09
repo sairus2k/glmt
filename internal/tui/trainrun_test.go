@@ -222,6 +222,26 @@ func TestTrainRun_ViewShowsProgress(t *testing.T) {
 	assert.Contains(t, viewStr, "Rebase onto main")
 }
 
+func TestTrainRun_DeduplicateConsecutiveSameStep(t *testing.T) {
+	m := newTestTrainModel()
+
+	// Send two messages with the same step and MR IID
+	result, _ := m.Update(trainStepMsg{mrIID: 42, step: "rebase", message: "Rebasing..."})
+	m = result.(TrainRunModel)
+
+	result, _ = m.Update(trainStepMsg{mrIID: 42, step: "rebase", message: "Rebase successful"})
+	m = result.(TrainRunModel)
+
+	// Should have only one entry with the updated message
+	require.Len(t, m.LogEntries(), 1, "duplicate step should update in place, not append")
+	assert.Equal(t, "Rebase successful", m.LogEntries()[0].Message)
+	assert.Equal(t, "Rebase onto main", m.LogEntries()[0].Name)
+
+	// Per-MR steps should also have only one entry
+	require.Len(t, m.MRSteps()[0].Steps, 1, "per-MR steps should also deduplicate")
+	assert.Equal(t, "Rebase successful", m.MRSteps()[0].Steps[0].Message)
+}
+
 func TestTrainRun_ViewShowsSkipped(t *testing.T) {
 	m := newTestTrainModel()
 

@@ -177,12 +177,33 @@ func (m TrainRunModel) handleStep(msg trainStepMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Append to per-MR steps (for backward compat)
+	// Deduplicate: if the last log entry matches, update timestamp instead of appending
+	if n := len(m.logEntries); n > 0 {
+		last := &m.logEntries[n-1]
+		if last.MRIID == entry.MRIID && last.Name == entry.Name {
+			last.Timestamp = entry.Timestamp
+			last.Message = entry.Message
+			// Update per-MR steps too
+			if mrIdx >= 0 {
+				steps := m.mrSteps[mrIdx].Steps
+				if len(steps) > 0 {
+					s := &steps[len(steps)-1]
+					if s.Name == entry.Name {
+						s.Timestamp = entry.Timestamp
+						s.Message = entry.Message
+					}
+				}
+			}
+			return m, nil
+		}
+	}
+
+	// Append to per-MR steps
 	if mrIdx >= 0 {
 		m.mrSteps[mrIdx].Steps = append(m.mrSteps[mrIdx].Steps, entry)
 	}
 
-	// Always append to chronological log
+	// Append to chronological log
 	m.logEntries = append(m.logEntries, entry)
 
 	return m, nil
