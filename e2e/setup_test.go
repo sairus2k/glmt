@@ -60,113 +60,6 @@ type testEnv struct {
 	cleanup   func()
 }
 
-// setupGitLab starts a GitLab CE container, seeds test data, and returns the test environment.
-func setupGitLab(t *testing.T) *testEnv {
-	t.Helper()
-	ctx := context.Background()
-
-	// Create a Docker network so GitLab and the runner can communicate
-	t.Log("Creating Docker network...")
-	net, err := network.New(ctx)
-	if err != nil {
-		t.Fatalf("Failed to create Docker network: %v", err)
-	}
-	networkName := net.Name
-
-	t.Log("Starting GitLab CE container (this takes a few minutes)...")
-	gitlabReq := testcontainers.ContainerRequest{
-		Image:        "gitlab/gitlab-ce:17.4.0-ce.0",
-		ExposedPorts: []string{"80/tcp"},
-		Networks:     []string{networkName},
-		NetworkAliases: map[string][]string{
-			networkName: {"gitlab"},
-		},
-		Env: map[string]string{
-			"GITLAB_OMNIBUS_CONFIG": strings.Join([]string{
-				"external_url 'http://gitlab'",
-				"gitlab_rails['initial_root_password'] = 'glmt-test-password-123'",
-				// Reduce memory footprint
-				"puma['worker_processes'] = 0",
-				"sidekiq['concurrency'] = 2",
-				"postgresql['shared_buffers'] = '128MB'",
-				// Disable non-essential services
-				"prometheus_monitoring['enable'] = false",
-				"alertmanager['enable'] = false",
-				"gitlab_kas['enable'] = false",
-				"registry['enable'] = false",
-				"mattermost['enable'] = false",
-				"gitlab_pages['enable'] = false",
-				"gitlab_rails['gitlab_shell_ssh_port'] = 2222",
-			}, "; "),
-		},
-		// No WaitingFor — we handle readiness ourselves via waitForAPI()
-		// because GitLab CE is amd64-only and very slow to boot on arm64.
-	}
-
-	gitlabContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: gitlabReq,
-		Started:          true,
-	})
-	if err != nil {
-		t.Fatalf("Failed to start GitLab container: %v", err)
-	}
-
-	mappedPort, err := gitlabContainer.MappedPort(ctx, "80")
-	if err != nil {
-		t.Fatalf("Failed to get mapped port: %v", err)
-	}
-
-	hostIP, err := gitlabContainer.Host(ctx)
-	if err != nil {
-		t.Fatalf("Failed to get container host: %v", err)
-	}
-
-	gitlabURL := fmt.Sprintf("http://%s:%s", hostIP, mappedPort.Port())
-	t.Logf("GitLab CE available at %s", gitlabURL)
-
-	waitForAPI(t, gitlabURL)
-
-	token := createRootToken(t, gitlabURL)
-	t.Log("Created root access token")
-
-	projectID := createProject(t, gitlabURL, token)
-	t.Logf("Created test project with ID %d", projectID)
-
-	createFile(t, gitlabURL, token, projectID, "main", ".gitlab-ci.yml", `
-test:
-  script:
-    - "true"
-  tags:
-    - shared
-`)
-	t.Log("Created .gitlab-ci.yml on main branch")
-
-	// Create runner via API and start sidecar container
-	runnerContainer := startRunner(t, ctx, networkName, gitlabURL, token)
-	t.Log("Runner sidecar started")
-
-	// Wait for GitLab to stabilize after runner start (memory pressure can cause 502s)
-	waitForAPI(t, gitlabURL)
-
-	mrIIDs := createTestMRs(t, gitlabURL, token, projectID)
-	t.Logf("Created %d test MRs: %v", len(mrIIDs), mrIIDs)
-
-	waitForMRPipelines(t, gitlabURL, token, projectID, mrIIDs)
-	t.Log("All MR pipelines passed")
-
-	return &testEnv{
-		gitlabURL: gitlabURL,
-		token:     token,
-		projectID: projectID,
-		mrIIDs:    mrIIDs,
-		cleanup: func() {
-			_ = runnerContainer.Terminate(ctx)
-			_ = gitlabContainer.Terminate(ctx)
-			_ = net.Remove(ctx)
-		},
-	}
-}
-
 func waitForAPI(t *testing.T, gitlabURL string) {
 	t.Helper()
 	deadline := time.Now().Add(15 * time.Minute)
@@ -455,7 +348,7 @@ check_interval = 3
 	return runnerContainer
 }
 
-// setupGitLabN is like setupGitLab but creates N test MRs.
+// setupGitLabN starts a GitLab CE container, seeds test data with N MRs, and returns the test environment.
 func setupGitLabN(t *testing.T, n int) *testEnv {
 	t.Helper()
 	ctx := context.Background()
@@ -594,66 +487,6 @@ func createTestMRsN(t *testing.T, gitlabURL, token string, projectID, n int) []i
 			respBody, _ := io.ReadAll(mrResp.Body)
 			_ = mrResp.Body.Close()
 			t.Fatalf("MR creation failed for %s with status %d: %s", branchName, mrResp.StatusCode, string(respBody))
-		}
-
-		var mr struct {
-			IID int `json:"iid"`
-		}
-		if err := json.NewDecoder(mrResp.Body).Decode(&mr); err != nil {
-			_ = mrResp.Body.Close()
-			t.Fatalf("Failed to decode MR response: %v", err)
-		}
-		_ = mrResp.Body.Close()
-		mrIIDs = append(mrIIDs, mr.IID)
-	}
-
-	return mrIIDs
-}
-
-func createTestMRs(t *testing.T, gitlabURL, token string, projectID int) []int {
-	t.Helper()
-
-	branches := []struct {
-		name     string
-		fileName string
-		content  string
-		mrTitle  string
-	}{
-		{"feature-a", "feature_a.txt", "Feature A content\n", "Add feature A"},
-		{"feature-b", "feature_b.txt", "Feature B content\n", "Add feature B"},
-	}
-
-	var mrIIDs []int
-
-	for _, br := range branches {
-		brData := map[string]interface{}{
-			"branch": br.name,
-			"ref":    "main",
-		}
-		body, _ := json.Marshal(brData)
-		req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v4/projects/%d/repository/branches", gitlabURL, projectID), bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("PRIVATE-TOKEN", token)
-		resp := apiDo(t, req)
-		_ = resp.Body.Close()
-
-		createFile(t, gitlabURL, token, projectID, br.name, br.fileName, br.content)
-
-		mrData := map[string]interface{}{
-			"source_branch": br.name,
-			"target_branch": "main",
-			"title":         br.mrTitle,
-		}
-		mrBody, _ := json.Marshal(mrData)
-		mrReq, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v4/projects/%d/merge_requests", gitlabURL, projectID), bytes.NewReader(mrBody))
-		mrReq.Header.Set("Content-Type", "application/json")
-		mrReq.Header.Set("PRIVATE-TOKEN", token)
-		mrResp := apiDo(t, mrReq)
-
-		if mrResp.StatusCode != 201 {
-			respBody, _ := io.ReadAll(mrResp.Body)
-			_ = mrResp.Body.Close()
-			t.Fatalf("MR creation failed for %s with status %d: %s", br.name, mrResp.StatusCode, string(respBody))
 		}
 
 		var mr struct {

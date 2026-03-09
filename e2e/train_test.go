@@ -14,106 +14,71 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestTrainMergesAllMRs is the main e2e test.
-// It starts a real GitLab CE instance, creates MRs, and runs glmt to merge them.
-func TestTrainMergesAllMRs(t *testing.T) {
+func TestTrainMergesMRs(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping e2e test in short mode")
 	}
 
-	binPath := glmtBin
-
-	// Start GitLab and seed data
-	env := setupGitLab(t)
-	defer env.cleanup()
-
-	// Verify commit counts are populated via the glmt client
-	apiClient, err := gitlab.NewAPIClient(env.gitlabURL, env.token)
-	require.NoError(t, err)
-	for _, iid := range env.mrIIDs {
-		mr, err := apiClient.GetMergeRequest(context.Background(), env.projectID, iid)
-		require.NoError(t, err, "GetMergeRequest for !%d", iid)
-		assert.Equal(t, 1, mr.CommitCount, "MR !%d should have 1 commit", iid)
+	tests := []struct {
+		name    string
+		mrCount int
+	}{
+		{"TwoMRs", 2},
+		{"ThreeMRs", 3},
 	}
 
-	// Build the --mrs flag value
-	mrsFlag := make([]string, len(env.mrIIDs))
-	for i, iid := range env.mrIIDs {
-		mrsFlag[i] = fmt.Sprintf("%d", iid)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := setupGitLabN(t, tt.mrCount)
+			defer env.cleanup()
 
-	// Run glmt in non-interactive mode
-	cmd := exec.Command(binPath,
-		"--non-interactive",
-		"--host", env.gitlabURL,
-		"--token", env.token,
-		"--project-id", fmt.Sprintf("%d", env.projectID),
-		"--mrs", strings.Join(mrsFlag, ","),
-	)
-	out, err := cmd.CombinedOutput()
-	output := string(out)
-	t.Logf("glmt output:\n%s", output)
+			// Verify commit counts are populated via the glmt client
+			apiClient, err := gitlab.NewAPIClient(env.gitlabURL, env.token)
+			require.NoError(t, err)
+			for _, iid := range env.mrIIDs {
+				mr, err := apiClient.GetMergeRequest(context.Background(), env.projectID, iid)
+				require.NoError(t, err, "GetMergeRequest for !%d", iid)
+				assert.Equal(t, 1, mr.CommitCount, "MR !%d should have 1 commit", iid)
+			}
 
-	// Assert: exit code 0 (all MRs merged)
-	require.NoError(t, err, "glmt should exit 0 when all MRs merge successfully")
+			// Build the --mrs flag value
+			mrsFlag := make([]string, len(env.mrIIDs))
+			for i, iid := range env.mrIIDs {
+				mrsFlag[i] = fmt.Sprintf("%d", iid)
+			}
 
-	// Assert: output contains merged status for each MR
-	assert.Contains(t, output, "=== Train Results ===")
-	for _, iid := range env.mrIIDs {
-		assert.Contains(t, output, fmt.Sprintf("MR !%d: merged", iid))
-	}
+			// Run glmt in non-interactive mode
+			cmd := exec.Command(glmtBin,
+				"--non-interactive",
+				"--host", env.gitlabURL,
+				"--token", env.token,
+				"--project-id", fmt.Sprintf("%d", env.projectID),
+				"--mrs", strings.Join(mrsFlag, ","),
+			)
+			out, err := cmd.CombinedOutput()
+			output := string(out)
+			t.Logf("glmt output:\n%s", output)
 
-	// Assert: pipeline cancellation happened for non-last MR
-	assert.Contains(t, output, "Cancelled main pipeline")
+			// Assert: exit code 0 (all MRs merged)
+			require.NoError(t, err, "glmt should exit 0 when all MRs merge successfully")
 
-	// Verify MRs are actually merged via the API
-	for _, iid := range env.mrIIDs {
-		state := getMRState(t, env.gitlabURL, env.token, env.projectID, iid)
-		assert.Equal(t, "merged", state, "MR !%d should be in merged state", iid)
-	}
-}
+			// Assert: output contains merged status for each MR
+			assert.Contains(t, output, "=== Train Results ===")
+			for _, iid := range env.mrIIDs {
+				assert.Contains(t, output, fmt.Sprintf("MR !%d: merged", iid))
+			}
 
-// TestTrainThreeMRs tests the train with 3 MRs, exercising pipeline cancellation twice.
-func TestTrainThreeMRs(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
-	}
+			// Pipeline cancellation should happen for all non-last MRs
+			expectedCancellations := tt.mrCount - 1
+			assert.GreaterOrEqual(t, strings.Count(output, "Cancelled main pipeline"), expectedCancellations,
+				"should cancel main pipeline at least %d times for %d-MR train", expectedCancellations, tt.mrCount)
 
-	binPath := glmtBin
-	env := setupGitLabN(t, 3)
-	defer env.cleanup()
-
-	mrsFlag := make([]string, len(env.mrIIDs))
-	for i, iid := range env.mrIIDs {
-		mrsFlag[i] = fmt.Sprintf("%d", iid)
-	}
-
-	cmd := exec.Command(binPath,
-		"--non-interactive",
-		"--host", env.gitlabURL,
-		"--token", env.token,
-		"--project-id", fmt.Sprintf("%d", env.projectID),
-		"--mrs", strings.Join(mrsFlag, ","),
-	)
-	out, err := cmd.CombinedOutput()
-	output := string(out)
-	t.Logf("glmt output:\n%s", output)
-
-	require.NoError(t, err, "glmt should exit 0 when all MRs merge successfully")
-
-	assert.Contains(t, output, "=== Train Results ===")
-	for _, iid := range env.mrIIDs {
-		assert.Contains(t, output, fmt.Sprintf("MR !%d: merged", iid))
-	}
-
-	// With 3 MRs, pipeline cancellation should happen at least twice (for MR 1 and MR 2)
-	assert.GreaterOrEqual(t, strings.Count(output, "Cancelled main pipeline"), 2,
-		"should cancel main pipeline at least twice for 3-MR train")
-
-	// Verify MRs are actually merged via the API
-	for _, iid := range env.mrIIDs {
-		state := getMRState(t, env.gitlabURL, env.token, env.projectID, iid)
-		assert.Equal(t, "merged", state, "MR !%d should be in merged state", iid)
+			// Verify MRs are actually merged via the API
+			for _, iid := range env.mrIIDs {
+				state := getMRState(t, env.gitlabURL, env.token, env.projectID, iid)
+				assert.Equal(t, "merged", state, "MR !%d should be in merged state", iid)
+			}
+		})
 	}
 }
 
