@@ -282,9 +282,13 @@ func (m AppModel) updateMRList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.fetchProjects(), spinnerTick())
 	case refetchMRsMsg:
 		_ = msg
-		m.mrList.loading = true
-		m.mrList.refreshing = false // cancel background cycle
-		return m, tea.Batch(m.fetchMRs(), spinnerTick())
+		m.mrList.refreshing = true
+		cmds := []tea.Cmd{m.fetchMRs(), spinnerTick()}
+		iids := collectUncheckedIIDs(m.mrList)
+		if len(iids) > 0 {
+			cmds = append(cmds, m.triggerMergeChecks(iids))
+		}
+		return m, tea.Batch(cmds...)
 	case backgroundRefetchMsg:
 		if m.mrList.refreshing {
 			return m, m.fetchMRs() // silent refetch, loading stays false

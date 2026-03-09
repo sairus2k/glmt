@@ -504,7 +504,11 @@ func (m MRListModel) View() tea.View {
 	b.WriteString("  ")
 	b.WriteString(sBold.Styled("Open merge requests"))
 	b.WriteString("  ")
-	b.WriteString(sFaint.Styled("select and reorder to set merge sequence"))
+	if m.refreshing {
+		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame] + " Refreshing..."))
+	} else {
+		b.WriteString(sFaint.Styled("select and reorder to set merge sequence"))
+	}
 	b.WriteString("  ")
 	b.WriteString(sSuccess.Styled(fmt.Sprintf("%d selected", m.SelectedCount())))
 	b.WriteString(sFaint.Styled(fmt.Sprintf(" / %d eligible", len(m.eligible))))

@@ -448,3 +448,18 @@ func TestMRList_ViewShowsSpinnerBadge(t *testing.T) {
 	assert.Contains(t, viewStr, spinnerFrames[0]+" checking")
 	assert.Contains(t, viewStr, spinnerFrames[0]+" unchecked")
 }
+
+func TestMRList_ViewShowsRefreshingIndicator(t *testing.T) {
+	mrs := []*gitlab.MergeRequest{eligibleMR1, eligibleMR2}
+	m := loadModel(mrs)
+	m.refreshing = true
+
+	view := m.View()
+	viewStr := view.Content
+
+	assert.Contains(t, viewStr, "Refreshing...")
+	assert.NotContains(t, viewStr, "Loading merge requests...")
+	// The MR list should still be visible.
+	assert.Contains(t, viewStr, eligibleMR1.Title)
+	assert.Contains(t, viewStr, eligibleMR2.Title)
+}
