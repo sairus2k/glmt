@@ -163,6 +163,20 @@ func (m TrainRunModel) handleStep(msg trainStepMsg) (tea.Model, tea.Cmd) {
 		StartedAt: now,
 	}
 
+	// Mark all previously running steps as done (processing is sequential)
+	for i := range m.logEntries {
+		if m.logEntries[i].Status == StepRunning {
+			m.logEntries[i].Status = StepDone
+		}
+	}
+	for mi := range m.mrSteps {
+		for si := range m.mrSteps[mi].Steps {
+			if m.mrSteps[mi].Steps[si].Status == StepRunning {
+				m.mrSteps[mi].Steps[si].Status = StepDone
+			}
+		}
+	}
+
 	// Append to per-MR steps (for backward compat)
 	if mrIdx >= 0 {
 		m.mrSteps[mrIdx].Steps = append(m.mrSteps[mrIdx].Steps, entry)

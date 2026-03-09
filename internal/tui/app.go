@@ -100,6 +100,8 @@ func (m AppModel) Init() tea.Cmd {
 		return tea.Batch(m.fetchProjects(), m.fetchCurrentUser(), spinnerTick())
 	case ScreenMRList:
 		return tea.Batch(m.fetchMRs(), m.fetchCurrentUser(), spinnerTick())
+	case ScreenTrainRun:
+		return nil
 	}
 	return nil
 }

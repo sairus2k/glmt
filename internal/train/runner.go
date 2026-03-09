@@ -153,7 +153,8 @@ func (r *Runner) processMR(ctx context.Context, mr *gitlab.MergeRequest, isLast 
 func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, isLast bool, lastCancelledPipelineID *int, isRetry bool) (MRStatus, string) {
 	// Step 1: REBASE
 	r.log(mr.IID, "rebase", "Rebasing merge request...")
-	if err := r.client.RebaseMergeRequest(ctx, r.projectID, mr.IID); err != nil {
+	rebasedMR, err := r.client.RebaseMergeRequest(ctx, r.projectID, mr.IID)
+	if err != nil {
 		if ctx.Err() != nil {
 			return MRStatusPending, ""
 		}
@@ -164,7 +165,7 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 
 	// Step 2: WAIT FOR PIPELINE
 	r.log(mr.IID, "pipeline_wait", "Waiting for pipeline...")
-	pipeline, err := r.waitForMRPipeline(ctx, mr.IID)
+	pipeline, err := r.waitForMRPipeline(ctx, mr.IID, rebasedMR.SHA)
 	if err != nil {
 		if ctx.Err() != nil {
 			return MRStatusPending, ""
@@ -290,7 +291,7 @@ func (r *Runner) waitForMergeReady(ctx context.Context, mrIID int) (*gitlab.Merg
 	}
 }
 
-func (r *Runner) waitForMRPipeline(ctx context.Context, mrIID int) (*gitlab.Pipeline, error) {
+func (r *Runner) waitForMRPipeline(ctx context.Context, mrIID int, expectedSHA string) (*gitlab.Pipeline, error) {
 	for {
 		pipeline, err := r.client.GetMergeRequestPipeline(ctx, r.projectID, mrIID)
 		if err != nil {
@@ -300,6 +301,9 @@ func (r *Runner) waitForMRPipeline(ctx context.Context, mrIID int) (*gitlab.Pipe
 		if pipeline != nil {
 			switch pipeline.Status {
 			case "success", "failed", "canceled", "skipped":
+				if expectedSHA != "" && pipeline.SHA != expectedSHA {
+					break // stale pipeline, keep polling
+				}
 				return pipeline, nil
 			}
 		}

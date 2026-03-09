@@ -62,8 +62,9 @@ type Client interface {
 	GetMergeRequest(ctx context.Context, projectID, mrIID int) (*MergeRequest, error)
 
 	// RebaseMergeRequest triggers a rebase of the MR onto its target branch.
-	// Returns nil on success. Returns an error if a rebase conflict occurs.
-	RebaseMergeRequest(ctx context.Context, projectID, mrIID int) error
+	// Returns the updated MR (with post-rebase SHA) on success.
+	// Returns an error if a rebase conflict occurs.
+	RebaseMergeRequest(ctx context.Context, projectID, mrIID int) (*MergeRequest, error)
 
 	// MergeMergeRequest merges the MR with a SHA guard.
 	// sha is the expected head SHA — the server returns 409 if it doesn't match.

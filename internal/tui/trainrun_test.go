@@ -88,7 +88,7 @@ func TestTrainRun_MultipleSteps(t *testing.T) {
 	assert.Equal(t, "Rebase onto main", m.MRSteps()[0].Steps[0].Name)
 	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[0].Status)
 	assert.Equal(t, "Pipeline running", m.MRSteps()[0].Steps[1].Name)
-	assert.Equal(t, StepRunning, m.MRSteps()[0].Steps[1].Status)
+	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[1].Status)
 	assert.Equal(t, "Pipeline passed", m.MRSteps()[0].Steps[2].Name)
 	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[2].Status)
 	assert.Equal(t, "Merged", m.MRSteps()[0].Steps[3].Name)
@@ -177,6 +177,29 @@ func TestTrainRun_Abort(t *testing.T) {
 	msg := cmd()
 	_, ok := msg.(trainAbortMsg)
 	assert.True(t, ok)
+}
+
+func TestTrainRun_PreviousRunningStepCompletedOnNewStep(t *testing.T) {
+	m := newTestTrainModel()
+
+	// Send pipeline_wait (running step)
+	result, _ := m.Update(trainStepMsg{mrIID: 42, step: "pipeline_wait", message: "Waiting..."})
+	m = result.(TrainRunModel)
+
+	require.Len(t, m.LogEntries(), 1)
+	assert.Equal(t, StepRunning, m.LogEntries()[0].Status)
+
+	// Send pipeline_success — previous running step should become done
+	result, _ = m.Update(trainStepMsg{mrIID: 42, step: "pipeline_success", message: "Pipeline passed"})
+	m = result.(TrainRunModel)
+
+	require.Len(t, m.LogEntries(), 2)
+	assert.Equal(t, StepDone, m.LogEntries()[0].Status, "previous running step should be marked done")
+	assert.Equal(t, StepDone, m.LogEntries()[1].Status)
+
+	// Also verify mrSteps are updated
+	require.Len(t, m.MRSteps()[0].Steps, 2)
+	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[0].Status, "per-MR running step should be marked done")
 }
 
 func TestTrainRun_ViewShowsProgress(t *testing.T) {

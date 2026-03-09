@@ -2,6 +2,7 @@ package train
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/sairus2k/glmt/internal/gitlab"
 )
@@ -21,7 +22,7 @@ type MockClient struct {
 	ListProjectsFn            func(ctx context.Context, search string) ([]*gitlab.Project, error)
 	ListMergeRequestsFullFn   func(ctx context.Context, projectPath string) ([]*gitlab.MergeRequest, error)
 	GetMergeRequestFn         func(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error)
-	RebaseMergeRequestFn      func(ctx context.Context, projectID, mrIID int) error
+	RebaseMergeRequestFn      func(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error)
 	MergeMergeRequestFn       func(ctx context.Context, projectID, mrIID int, sha string) error
 	GetMergeRequestPipelineFn func(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, error)
 	ListPipelinesFn           func(ctx context.Context, projectID int, ref, status string) ([]*gitlab.Pipeline, error)
@@ -65,12 +66,12 @@ func (m *MockClient) GetMergeRequest(ctx context.Context, projectID, mrIID int) 
 	return &gitlab.MergeRequest{IID: mrIID, DetailedMergeStatus: "mergeable"}, nil
 }
 
-func (m *MockClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int) error {
+func (m *MockClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error) {
 	m.record("RebaseMergeRequest", projectID, mrIID)
 	if m.RebaseMergeRequestFn != nil {
 		return m.RebaseMergeRequestFn(ctx, projectID, mrIID)
 	}
-	return nil
+	return &gitlab.MergeRequest{IID: mrIID, SHA: fmt.Sprintf("sha-%d", mrIID)}, nil
 }
 
 func (m *MockClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) error {
@@ -86,7 +87,7 @@ func (m *MockClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrI
 	if m.GetMergeRequestPipelineFn != nil {
 		return m.GetMergeRequestPipelineFn(ctx, projectID, mrIID)
 	}
-	return &gitlab.Pipeline{Status: "success"}, nil
+	return &gitlab.Pipeline{Status: "success", SHA: fmt.Sprintf("sha-%d", mrIID)}, nil
 }
 
 func (m *MockClient) ListPipelines(ctx context.Context, projectID int, ref, status string) ([]*gitlab.Pipeline, error) {

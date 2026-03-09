@@ -131,9 +131,9 @@ func TestRunnerRun(t *testing.T) {
 				// MR 2 pipeline fails
 				m.GetMergeRequestPipelineFn = func(_ context.Context, _ int, mrIID int) (*gitlab.Pipeline, error) {
 					if mrIID == 2 {
-						return &gitlab.Pipeline{Status: "failed"}, nil
+						return &gitlab.Pipeline{Status: "failed", SHA: fmt.Sprintf("sha-%d", mrIID)}, nil
 					}
-					return &gitlab.Pipeline{Status: "success"}, nil
+					return &gitlab.Pipeline{Status: "success", SHA: fmt.Sprintf("sha-%d", mrIID)}, nil
 				}
 				pipelineID := 100
 				listEmptyCount := 0
@@ -198,9 +198,9 @@ func TestRunnerRun(t *testing.T) {
 				// MR 2 pipeline fails
 				m.GetMergeRequestPipelineFn = func(_ context.Context, _ int, mrIID int) (*gitlab.Pipeline, error) {
 					if mrIID == 2 {
-						return &gitlab.Pipeline{Status: "failed"}, nil
+						return &gitlab.Pipeline{Status: "failed", SHA: fmt.Sprintf("sha-%d", mrIID)}, nil
 					}
-					return &gitlab.Pipeline{Status: "success"}, nil
+					return &gitlab.Pipeline{Status: "success", SHA: fmt.Sprintf("sha-%d", mrIID)}, nil
 				}
 				// ListPipelines for cancel returns pipeline 101
 				listEmptyCount := 0
@@ -348,11 +348,11 @@ func TestRunnerRun(t *testing.T) {
 			},
 			setup: func(m *MockClient) {
 				// MR 1 rebase fails with conflict
-				m.RebaseMergeRequestFn = func(_ context.Context, _ int, mrIID int) error {
+				m.RebaseMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					if mrIID == 1 {
-						return fmt.Errorf("rebase conflict")
+						return nil, fmt.Errorf("rebase conflict")
 					}
-					return nil
+					return &gitlab.MergeRequest{IID: mrIID, SHA: fmt.Sprintf("sha-%d", mrIID)}, nil
 				}
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{
@@ -401,8 +401,8 @@ func TestRunnerRun(t *testing.T) {
 			},
 			setup: func(m *MockClient) {
 				// All rebases fail
-				m.RebaseMergeRequestFn = func(_ context.Context, _ int, _ int) error {
-					return fmt.Errorf("rebase conflict")
+				m.RebaseMergeRequestFn = func(_ context.Context, _ int, _ int) (*gitlab.MergeRequest, error) {
+					return nil, fmt.Errorf("rebase conflict")
 				}
 			},
 			assertResult: func(t *testing.T, result *Result) {
@@ -493,12 +493,12 @@ func TestRunnerRun(t *testing.T) {
 			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
 			setup: func(m *MockClient) {
 				pipelinePollCount := 0
-				m.GetMergeRequestPipelineFn = func(_ context.Context, _ int, _ int) (*gitlab.Pipeline, error) {
+				m.GetMergeRequestPipelineFn = func(_ context.Context, _ int, mrIID int) (*gitlab.Pipeline, error) {
 					pipelinePollCount++
 					if pipelinePollCount < 3 {
 						return &gitlab.Pipeline{Status: "running"}, nil
 					}
-					return &gitlab.Pipeline{Status: "success"}, nil
+					return &gitlab.Pipeline{Status: "success", SHA: fmt.Sprintf("sha-%d", mrIID)}, nil
 				}
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{
@@ -537,8 +537,8 @@ func TestRunnerRun(t *testing.T) {
 			name: "pipeline canceled status - MR skipped",
 			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
 			setup: func(m *MockClient) {
-				m.GetMergeRequestPipelineFn = func(_ context.Context, _ int, _ int) (*gitlab.Pipeline, error) {
-					return &gitlab.Pipeline{Status: "canceled"}, nil
+				m.GetMergeRequestPipelineFn = func(_ context.Context, _ int, mrIID int) (*gitlab.Pipeline, error) {
+					return &gitlab.Pipeline{Status: "canceled", SHA: fmt.Sprintf("sha-%d", mrIID)}, nil
 				}
 			},
 			assertResult: func(t *testing.T, result *Result) {
@@ -552,8 +552,8 @@ func TestRunnerRun(t *testing.T) {
 			name: "pipeline skipped status - MR skipped",
 			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
 			setup: func(m *MockClient) {
-				m.GetMergeRequestPipelineFn = func(_ context.Context, _ int, _ int) (*gitlab.Pipeline, error) {
-					return &gitlab.Pipeline{Status: "skipped"}, nil
+				m.GetMergeRequestPipelineFn = func(_ context.Context, _ int, mrIID int) (*gitlab.Pipeline, error) {
+					return &gitlab.Pipeline{Status: "skipped", SHA: fmt.Sprintf("sha-%d", mrIID)}, nil
 				}
 			},
 			assertResult: func(t *testing.T, result *Result) {
@@ -634,8 +634,8 @@ func TestRunnerRun(t *testing.T) {
 				makeMR(2, "MR 2"),
 			},
 			setup: func(m *MockClient) {
-				m.GetMergeRequestPipelineFn = func(_ context.Context, _ int, _ int) (*gitlab.Pipeline, error) {
-					return &gitlab.Pipeline{Status: "failed"}, nil
+				m.GetMergeRequestPipelineFn = func(_ context.Context, _ int, mrIID int) (*gitlab.Pipeline, error) {
+					return &gitlab.Pipeline{Status: "failed", SHA: fmt.Sprintf("sha-%d", mrIID)}, nil
 				}
 			},
 			assertResult: func(t *testing.T, result *Result) {
@@ -879,6 +879,58 @@ func TestRunnerRun(t *testing.T) {
 				// Should have polled ListPipelines multiple times to skip the stale pipeline
 				listCalls := m.CallsTo("ListPipelines")
 				assert.GreaterOrEqual(t, len(listCalls), 3, "should have baseline + at least 2 polls")
+			},
+		},
+		{
+			name: "stale pipeline after rebase is ignored",
+			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
+			setup: func(m *MockClient) {
+				// Rebase returns a new SHA
+				m.RebaseMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					return &gitlab.MergeRequest{IID: mrIID, SHA: "new-sha-after-rebase"}, nil
+				}
+				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					return &gitlab.MergeRequest{
+						IID:                 mrIID,
+						SHA:                 "new-sha-after-rebase",
+						TargetBranch:        "main",
+						DetailedMergeStatus: "mergeable",
+					}, nil
+				}
+				pipelinePollCount := 0
+				m.GetMergeRequestPipelineFn = func(_ context.Context, _ int, mrIID int) (*gitlab.Pipeline, error) {
+					pipelinePollCount++
+					if pipelinePollCount == 1 {
+						// First poll: stale pipeline from before rebase
+						return &gitlab.Pipeline{Status: "success", SHA: "old-sha-before-rebase"}, nil
+					}
+					// Second poll: correct pipeline with new SHA
+					return &gitlab.Pipeline{Status: "success", SHA: "new-sha-after-rebase"}, nil
+				}
+				listEmptyCount := 0
+				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
+					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
+						return []*gitlab.Pipeline{
+							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
+						}, nil
+					}
+					return nil, nil
+				}
+			},
+			assertResult: func(t *testing.T, result *Result) {
+				require.Len(t, result.MRResults, 1)
+				assert.Equal(t, MRStatusMerged, result.MRResults[0].Status)
+			},
+			assertCalls: func(t *testing.T, m *MockClient) {
+				// Should poll pipeline twice: first returns stale SHA, second returns correct SHA
+				pipelineCalls := m.CallsTo("GetMergeRequestPipeline")
+				assert.Len(t, pipelineCalls, 2, "should poll pipeline twice due to stale SHA")
 			},
 		},
 	}

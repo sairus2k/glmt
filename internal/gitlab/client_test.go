@@ -103,8 +103,9 @@ func TestRebaseMergeRequest_Success(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	err := client.RebaseMergeRequest(context.Background(), 1, 10)
+	mr, err := client.RebaseMergeRequest(context.Background(), 1, 10)
 	require.NoError(t, err)
+	assert.Equal(t, "abc", mr.SHA)
 	assert.GreaterOrEqual(t, callCount, 2)
 }
 
@@ -129,8 +130,9 @@ func TestRebaseMergeRequest_Conflict(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	err := client.RebaseMergeRequest(context.Background(), 1, 10)
+	mr, err := client.RebaseMergeRequest(context.Background(), 1, 10)
 	require.Error(t, err)
+	assert.Nil(t, mr)
 	assert.Contains(t, err.Error(), "conflict")
 }
 

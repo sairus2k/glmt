@@ -107,17 +107,17 @@ func (c *APIClient) GetMergeRequest(ctx context.Context, projectID, mrIID int) (
 }
 
 // RebaseMergeRequest triggers a rebase of the MR onto its target branch.
-func (c *APIClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int) error {
+func (c *APIClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int) (*MergeRequest, error) {
 	_, err := c.client.MergeRequests.RebaseMergeRequest(int64(projectID), int64(mrIID), nil, goGitLab.WithContext(ctx))
 	if err != nil {
-		return fmt.Errorf("triggering rebase for MR %d: %w", mrIID, err)
+		return nil, fmt.Errorf("triggering rebase for MR %d: %w", mrIID, err)
 	}
 
 	// Poll until rebase completes.
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-time.After(c.rebasePollInterval):
 		}
 
@@ -126,15 +126,15 @@ func (c *APIClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int
 		}
 		mr, _, err := c.client.MergeRequests.GetMergeRequest(int64(projectID), int64(mrIID), opts, goGitLab.WithContext(ctx))
 		if err != nil {
-			return fmt.Errorf("polling rebase status for MR %d: %w", mrIID, err)
+			return nil, fmt.Errorf("polling rebase status for MR %d: %w", mrIID, err)
 		}
 
 		if mr.MergeError != "" && strings.Contains(mr.MergeError, "conflict") {
-			return fmt.Errorf("rebase conflict for MR %d: %s", mrIID, mr.MergeError)
+			return nil, fmt.Errorf("rebase conflict for MR %d: %s", mrIID, mr.MergeError)
 		}
 
 		if !mr.RebaseInProgress {
-			return nil
+			return convertMergeRequest(mr), nil
 		}
 	}
 }
