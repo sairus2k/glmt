@@ -66,6 +66,7 @@ func TestRunnerRun(t *testing.T) {
 				// MergeMergeRequest succeeds (default)
 				// ListPipelines for cancel: return a running pipeline for non-last MRs
 				pipelineID := 100
+				listEmptyCount := 0
 				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
 					if ref == "main" && status == "running" {
 						pipelineID++
@@ -73,8 +74,14 @@ func TestRunnerRun(t *testing.T) {
 							{ID: pipelineID, Status: "running", Ref: "main", WebURL: fmt.Sprintf("http://example.com/pipelines/%d", pipelineID)},
 						}, nil
 					}
-					// For final main pipeline wait (status="")
+					// For pre-train baseline and final main pipeline wait (status="")
 					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
 						return []*gitlab.Pipeline{
 							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
 						}, nil
@@ -129,6 +136,7 @@ func TestRunnerRun(t *testing.T) {
 					return &gitlab.Pipeline{Status: "success"}, nil
 				}
 				pipelineID := 100
+				listEmptyCount := 0
 				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
 					if ref == "main" && status == "running" {
 						pipelineID++
@@ -137,6 +145,12 @@ func TestRunnerRun(t *testing.T) {
 						}, nil
 					}
 					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
 						return []*gitlab.Pipeline{
 							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
 						}, nil
@@ -189,6 +203,7 @@ func TestRunnerRun(t *testing.T) {
 					return &gitlab.Pipeline{Status: "success"}, nil
 				}
 				// ListPipelines for cancel returns pipeline 101
+				listEmptyCount := 0
 				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
 					if ref == "main" && status == "running" {
 						return []*gitlab.Pipeline{
@@ -196,6 +211,12 @@ func TestRunnerRun(t *testing.T) {
 						}, nil
 					}
 					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
 						return []*gitlab.Pipeline{
 							{ID: 101, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/101"},
 						}, nil
@@ -253,8 +274,15 @@ func TestRunnerRun(t *testing.T) {
 					}
 					return nil
 				}
+				listEmptyCount := 0
 				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
 					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
 						return []*gitlab.Pipeline{
 							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
 						}, nil
@@ -334,8 +362,15 @@ func TestRunnerRun(t *testing.T) {
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
+				listEmptyCount := 0
 				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
 					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
 						return []*gitlab.Pipeline{
 							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
 						}, nil
@@ -379,7 +414,7 @@ func TestRunnerRun(t *testing.T) {
 				assert.Empty(t, result.MainPipelineURL)
 			},
 			assertCalls: func(t *testing.T, m *MockClient) {
-				// Only rebase calls, nothing else
+				// Only rebase calls + pre-train baseline
 				rebaseCalls := m.CallsTo("RebaseMergeRequest")
 				assert.Len(t, rebaseCalls, 2)
 				mergeCalls := m.CallsTo("MergeMergeRequest")
@@ -389,7 +424,7 @@ func TestRunnerRun(t *testing.T) {
 				retryCalls := m.CallsTo("RetryPipeline")
 				assert.Empty(t, retryCalls)
 				listCalls := m.CallsTo("ListPipelines")
-				assert.Empty(t, listCalls, "no pipeline listing when nothing merged")
+				assert.Len(t, listCalls, 1, "only pre-train baseline listing")
 			},
 		},
 		{
@@ -423,8 +458,15 @@ func TestRunnerRun(t *testing.T) {
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
+				listEmptyCount := 0
 				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
 					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
 						return []*gitlab.Pipeline{
 							{ID: 300, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/300"},
 						}, nil
@@ -466,8 +508,15 @@ func TestRunnerRun(t *testing.T) {
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
+				listEmptyCount := 0
 				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
 					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
 						return []*gitlab.Pipeline{
 							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
 						}, nil
@@ -555,8 +604,15 @@ func TestRunnerRun(t *testing.T) {
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
+				listEmptyCount := 0
 				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
 					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
 						return []*gitlab.Pipeline{
 							{ID: 200, Status: "failed", Ref: "main", WebURL: "http://example.com/pipelines/200"},
 						}, nil
@@ -593,7 +649,7 @@ func TestRunnerRun(t *testing.T) {
 				retryCalls := m.CallsTo("RetryPipeline")
 				assert.Empty(t, retryCalls, "should not retry when nothing was merged")
 				listCalls := m.CallsTo("ListPipelines")
-				assert.Empty(t, listCalls, "should not list pipelines when nothing merged")
+				assert.Len(t, listCalls, 1, "only pre-train baseline listing")
 			},
 		},
 		{
@@ -612,6 +668,7 @@ func TestRunnerRun(t *testing.T) {
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
+				listEmptyCount := 0
 				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
 					if ref == "main" && status == "running" {
 						return []*gitlab.Pipeline{
@@ -619,6 +676,12 @@ func TestRunnerRun(t *testing.T) {
 						}, nil
 					}
 					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
 						return []*gitlab.Pipeline{
 							{ID: 600, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/600"},
 						}, nil
@@ -634,6 +697,8 @@ func TestRunnerRun(t *testing.T) {
 			assertCalls: func(t *testing.T, m *MockClient) {
 				methods := m.MethodNames()
 				expected := []string{
+					// Pre-train baseline
+					"ListPipelines", // status=""
 					// MR 10
 					"RebaseMergeRequest",
 					"GetMergeRequestPipeline",
@@ -675,6 +740,7 @@ func TestRunnerRun(t *testing.T) {
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
+				listEmptyCount := 0
 				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
 					if ref == "main" && status == "running" {
 						return nil, nil // no running pipeline
@@ -685,6 +751,12 @@ func TestRunnerRun(t *testing.T) {
 						}, nil
 					}
 					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
 						return []*gitlab.Pipeline{
 							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
 						}, nil
@@ -719,8 +791,15 @@ func TestRunnerRun(t *testing.T) {
 					}, nil
 				}
 				listCallCount := 0
+				listEmptyCount := 0
 				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
 					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
 						return []*gitlab.Pipeline{
 							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
 						}, nil
@@ -750,6 +829,56 @@ func TestRunnerRun(t *testing.T) {
 				assert.Equal(t, 102, cancelCalls[0].Args[1], "should cancel pipeline 102 found on retry")
 				// Should have 3 (first round) + at least 1 (retry round) ListPipelines calls for cancel
 				// plus 1 for main pipeline wait = varies, but cancel should have been called
+			},
+		},
+		{
+			name: "single MR - skips stale pipeline",
+			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
+			setup: func(m *MockClient) {
+				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					return &gitlab.MergeRequest{
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
+						DetailedMergeStatus: "mergeable",
+					}, nil
+				}
+				listEmptyCount := 0
+				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
+					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							// Pre-train baseline: stale pipeline
+							return []*gitlab.Pipeline{
+								{ID: 15553, Status: "canceled", Ref: "main", WebURL: "http://example.com/pipelines/15553"},
+							}, nil
+						}
+						if listEmptyCount == 2 {
+							// First poll: still the stale pipeline
+							return []*gitlab.Pipeline{
+								{ID: 15553, Status: "canceled", Ref: "main", WebURL: "http://example.com/pipelines/15553"},
+							}, nil
+						}
+						// Second poll: new pipeline appears
+						return []*gitlab.Pipeline{
+							{ID: 15554, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/15554"},
+						}, nil
+					}
+					return nil, nil
+				}
+			},
+			assertResult: func(t *testing.T, result *Result) {
+				require.Len(t, result.MRResults, 1)
+				assert.Equal(t, MRStatusMerged, result.MRResults[0].Status)
+				assert.Equal(t, "success", result.MainPipelineStatus)
+				assert.Equal(t, "http://example.com/pipelines/15554", result.MainPipelineURL, "should pick up new pipeline, not stale one")
+			},
+			assertCalls: func(t *testing.T, m *MockClient) {
+				cancelCalls := m.CallsTo("CancelPipeline")
+				assert.Empty(t, cancelCalls, "should not cancel pipeline for last/only MR")
+				// Should have polled ListPipelines multiple times to skip the stale pipeline
+				listCalls := m.CallsTo("ListPipelines")
+				assert.GreaterOrEqual(t, len(listCalls), 3, "should have baseline + at least 2 polls")
 			},
 		},
 	}
@@ -794,8 +923,15 @@ func TestRunnerLogger(t *testing.T) {
 			DetailedMergeStatus: "mergeable",
 		}, nil
 	}
+	listEmptyCount := 0
 	mock.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
 		if ref == "main" && status == "" {
+			listEmptyCount++
+			if listEmptyCount == 1 {
+				return []*gitlab.Pipeline{
+					{ID: 50, Status: "success", Ref: "main"},
+				}, nil
+			}
 			return []*gitlab.Pipeline{
 				{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
 			}, nil

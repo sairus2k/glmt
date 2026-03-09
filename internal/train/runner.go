@@ -78,6 +78,14 @@ func (r *Runner) Run(ctx context.Context, mrs []*gitlab.MergeRequest) (*Result, 
 	anyMerged := false
 	targetBranch := mrs[0].TargetBranch
 
+	var preTrainPipelineID int
+	if ctx.Err() == nil {
+		pipelines, err := r.client.ListPipelines(ctx, r.projectID, targetBranch, "")
+		if err == nil && len(pipelines) > 0 {
+			preTrainPipelineID = pipelines[0].ID
+		}
+	}
+
 	for i, mr := range mrs {
 		if err := ctx.Err(); err != nil {
 			return result, err
@@ -108,6 +116,7 @@ func (r *Runner) Run(ctx context.Context, mrs []*gitlab.MergeRequest) (*Result, 
 					r.log(mr.IID, "restart_pipeline", fmt.Sprintf("Failed to restart pipeline: %v", retryErr))
 				} else {
 					r.log(mr.IID, "restart_pipeline", fmt.Sprintf("Restarted main pipeline: %s", retried.WebURL))
+					lastCancelledPipelineID = 0
 				}
 			}
 			// 6b: If no MR merged, do nothing
@@ -117,7 +126,11 @@ func (r *Runner) Run(ctx context.Context, mrs []*gitlab.MergeRequest) (*Result, 
 	// Step 7: Wait for main pipeline if any MR was merged or a pipeline was restarted
 	if anyMerged {
 		r.log(0, "main_pipeline_wait", "Waiting for main pipeline...")
-		pipeline, err := r.waitForMainPipeline(ctx, targetBranch)
+		minPipelineID := preTrainPipelineID
+		if lastCancelledPipelineID > minPipelineID {
+			minPipelineID = lastCancelledPipelineID
+		}
+		pipeline, err := r.waitForMainPipeline(ctx, targetBranch, minPipelineID)
 		if err != nil {
 			if ctx.Err() != nil {
 				return result, ctx.Err()
@@ -300,14 +313,20 @@ func (r *Runner) waitForMRPipeline(ctx context.Context, mrIID int) (*gitlab.Pipe
 	}
 }
 
-func (r *Runner) waitForMainPipeline(ctx context.Context, targetBranch string) (*gitlab.Pipeline, error) {
+func (r *Runner) waitForMainPipeline(ctx context.Context, targetBranch string, minPipelineID int) (*gitlab.Pipeline, error) {
 	for {
 		pipelines, err := r.client.ListPipelines(ctx, r.projectID, targetBranch, "")
 		if err != nil {
 			return nil, err
 		}
-		if len(pipelines) == 0 {
-			return nil, nil
+		if len(pipelines) == 0 || pipelines[0].ID <= minPipelineID {
+			// No pipeline yet or stale pipeline — poll again
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(r.PollPipelineInterval):
+			}
+			continue
 		}
 
 		pipeline := pipelines[0]
