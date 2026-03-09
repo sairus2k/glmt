@@ -19,6 +19,7 @@ type MRListModel struct {
 	repoPath      string
 	loading       bool
 	refreshing    bool // background refresh in progress (list visible, spinner badges animate)
+	userRefresh   bool // true only when user explicitly pressed R
 	spinnerFrame  int
 	errMsg        string
 	contentHeight int
@@ -148,6 +149,9 @@ func (m MRListModel) handleMRsLoaded(msg mrsLoadedMsg) MRListModel {
 		m.eligible = mrs.eligible
 		m.ineligible = mrs.ineligible
 		m.refreshing = m.hasUncheckedMRs()
+		if !m.refreshing {
+			m.userRefresh = false
+		}
 		return m
 	}
 
@@ -179,6 +183,9 @@ func (m MRListModel) handleMRsLoaded(msg mrsLoadedMsg) MRListModel {
 	}
 
 	m.refreshing = m.hasUncheckedMRs()
+	if !m.refreshing {
+		m.userRefresh = false
+	}
 	return m
 }
 
@@ -504,7 +511,7 @@ func (m MRListModel) View() tea.View {
 	b.WriteString("  ")
 	b.WriteString(sBold.Styled("Open merge requests"))
 	b.WriteString("  ")
-	if m.refreshing {
+	if m.userRefresh {
 		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame] + " Refreshing..."))
 	} else {
 		b.WriteString(sFaint.Styled("select and reorder to set merge sequence"))

@@ -453,6 +453,7 @@ func TestMRList_ViewShowsRefreshingIndicator(t *testing.T) {
 	mrs := []*gitlab.MergeRequest{eligibleMR1, eligibleMR2}
 	m := loadModel(mrs)
 	m.refreshing = true
+	m.userRefresh = true
 
 	view := m.View()
 	viewStr := view.Content

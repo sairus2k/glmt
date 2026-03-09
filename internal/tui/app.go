@@ -285,6 +285,7 @@ func (m AppModel) updateMRList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case refetchMRsMsg:
 		_ = msg
 		m.mrList.refreshing = true
+		m.mrList.userRefresh = true
 		cmds := []tea.Cmd{m.fetchMRs(), spinnerTick()}
 		iids := collectUncheckedIIDs(m.mrList)
 		if len(iids) > 0 {
