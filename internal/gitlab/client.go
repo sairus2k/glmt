@@ -152,15 +152,16 @@ func (c *APIClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int,
 	return nil
 }
 
-// GetMergeRequestPipeline returns the head pipeline for a merge request.
-func (c *APIClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*Pipeline, error) {
+// GetMergeRequestPipeline returns the head pipeline for a merge request,
+// along with the MR's DetailedMergeStatus.
+func (c *APIClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*Pipeline, string, error) {
 	mr, _, err := c.client.MergeRequests.GetMergeRequest(int64(projectID), int64(mrIID), nil, goGitLab.WithContext(ctx))
 	if err != nil {
-		return nil, fmt.Errorf("getting MR %d for pipeline: %w", mrIID, err)
+		return nil, "", fmt.Errorf("getting MR %d for pipeline: %w", mrIID, err)
 	}
 
 	if mr.HeadPipeline == nil {
-		return nil, nil
+		return nil, mr.DetailedMergeStatus, nil
 	}
 
 	return &Pipeline{
@@ -169,7 +170,7 @@ func (c *APIClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrII
 		Ref:    mr.HeadPipeline.Ref,
 		SHA:    mr.HeadPipeline.SHA,
 		WebURL: mr.HeadPipeline.WebURL,
-	}, nil
+	}, mr.DetailedMergeStatus, nil
 }
 
 // ListPipelines returns pipelines for a ref, ordered by ID descending.

@@ -300,14 +300,23 @@ func (r *Runner) waitForMergeReady(ctx context.Context, mrIID int) (*gitlab.Merg
 
 func (r *Runner) waitForMRPipeline(ctx context.Context, mrIID int, expectedSHA string) (*gitlab.Pipeline, error) {
 	for {
-		pipeline, err := r.client.GetMergeRequestPipeline(ctx, r.projectID, mrIID)
+		pipeline, mergeStatus, err := r.client.GetMergeRequestPipeline(ctx, r.projectID, mrIID)
 		if err != nil {
 			return nil, err
 		}
 
 		if pipeline != nil {
 			switch pipeline.Status {
-			case "success", "failed", "canceled", "skipped":
+			case "success":
+				if expectedSHA != "" && pipeline.SHA != expectedSHA {
+					break // stale pipeline (wrong SHA), keep polling
+				}
+				if mergeStatus == "ci_still_running" {
+					r.log(mrIID, "pipeline_wait", "Pipeline shows success but GitLab reports CI still running, keep polling...")
+					break // stale pipeline — GitLab knows CI needs re-evaluation
+				}
+				return pipeline, nil
+			case "failed", "canceled", "skipped":
 				if expectedSHA != "" && pipeline.SHA != expectedSHA {
 					break // stale pipeline, keep polling
 				}

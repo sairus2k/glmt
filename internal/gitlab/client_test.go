@@ -188,7 +188,7 @@ func TestGetMergeRequestPipeline(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	pipeline, err := client.GetMergeRequestPipeline(context.Background(), 1, 10)
+	pipeline, mergeStatus, err := client.GetMergeRequestPipeline(context.Background(), 1, 10)
 	require.NoError(t, err)
 	require.NotNil(t, pipeline)
 
@@ -197,6 +197,7 @@ func TestGetMergeRequestPipeline(t *testing.T) {
 	assert.Equal(t, "feature-x", pipeline.Ref)
 	assert.Equal(t, "abc123", pipeline.SHA)
 	assert.Equal(t, "https://gitlab.com/pipeline/200", pipeline.WebURL)
+	assert.Empty(t, mergeStatus)
 }
 
 func TestListPipelines(t *testing.T) {

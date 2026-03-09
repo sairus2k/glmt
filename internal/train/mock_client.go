@@ -24,7 +24,7 @@ type MockClient struct {
 	GetMergeRequestFn         func(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error)
 	RebaseMergeRequestFn      func(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error)
 	MergeMergeRequestFn       func(ctx context.Context, projectID, mrIID int, sha string) error
-	GetMergeRequestPipelineFn func(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, error)
+	GetMergeRequestPipelineFn func(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, string, error)
 	ListPipelinesFn           func(ctx context.Context, projectID int, ref, status string) ([]*gitlab.Pipeline, error)
 	CancelPipelineFn          func(ctx context.Context, projectID, pipelineID int) error
 	RetryPipelineFn           func(ctx context.Context, projectID, pipelineID int) (*gitlab.Pipeline, error)
@@ -82,12 +82,12 @@ func (m *MockClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int
 	return nil
 }
 
-func (m *MockClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, error) {
+func (m *MockClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, string, error) {
 	m.record("GetMergeRequestPipeline", projectID, mrIID)
 	if m.GetMergeRequestPipelineFn != nil {
 		return m.GetMergeRequestPipelineFn(ctx, projectID, mrIID)
 	}
-	return &gitlab.Pipeline{Status: "success", SHA: fmt.Sprintf("sha-%d", mrIID)}, nil
+	return &gitlab.Pipeline{Status: "success", SHA: fmt.Sprintf("sha-%d", mrIID)}, "", nil
 }
 
 func (m *MockClient) ListPipelines(ctx context.Context, projectID int, ref, status string) ([]*gitlab.Pipeline, error) {

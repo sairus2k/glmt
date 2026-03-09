@@ -71,8 +71,9 @@ type Client interface {
 	// Returns nil on success.
 	MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) error
 
-	// GetMergeRequestPipeline returns the head pipeline for a merge request.
-	GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*Pipeline, error)
+	// GetMergeRequestPipeline returns the head pipeline for a merge request,
+	// along with the MR's DetailedMergeStatus.
+	GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*Pipeline, string, error)
 
 	// ListPipelines returns pipelines for a ref, ordered by ID descending.
 	ListPipelines(ctx context.Context, projectID int, ref, status string) ([]*Pipeline, error)
