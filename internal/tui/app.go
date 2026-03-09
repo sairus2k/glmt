@@ -316,6 +316,10 @@ func (m AppModel) updateTrainRun(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newRun, _ := m.trainRun.Update(msg)
 		m.trainRun = newRun.(TrainRunModel)
 		return m, nil
+	case trainBackMsg:
+		m.screen = ScreenMRList
+		m.mrList.loading = true
+		return m, tea.Batch(m.fetchMRs(), spinnerTick())
 	}
 
 	newRun, cmd := m.trainRun.Update(msg)

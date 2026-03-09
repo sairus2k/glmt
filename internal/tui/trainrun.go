@@ -64,6 +64,8 @@ type trainDoneMsg struct {
 
 type trainAbortMsg struct{}
 
+type trainBackMsg struct{}
+
 // NewTrainRunModel creates a new TrainRunModel with the given merge requests.
 func NewTrainRunModel(mrs []*gitlab.MergeRequest) TrainRunModel {
 	mrSteps := make([]MRStepLog, len(mrs))
@@ -106,6 +108,15 @@ func (m TrainRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m TrainRunModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	if m.done || m.aborted {
+		switch key {
+		case "q", "ctrl+c":
+			return m, tea.Quit
+		case "esc", "enter":
+			return m, func() tea.Msg { return trainBackMsg{} }
+		}
+		return m, nil
+	}
 	switch key {
 	case "q", "esc", "ctrl+c":
 		m.aborted = true
@@ -326,8 +337,8 @@ func (m TrainRunModel) Result() *train.Result { return m.result }
 
 // KeyHints returns the keyboard hints for the train run screen.
 func (m TrainRunModel) KeyHints() []KeyHint {
-	if !m.done {
-		return []KeyHint{{"[Esc]", "abort"}}
+	if m.done || m.aborted {
+		return []KeyHint{{"[Enter]", "back"}, {"[q]", "quit"}}
 	}
-	return nil
+	return []KeyHint{{"[Esc]", "abort"}}
 }
