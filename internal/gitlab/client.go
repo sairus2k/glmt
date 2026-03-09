@@ -175,9 +175,10 @@ func (c *APIClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrII
 // ListPipelines returns pipelines for a ref, ordered by ID descending.
 func (c *APIClient) ListPipelines(ctx context.Context, projectID int, ref, status string) ([]*Pipeline, error) {
 	opts := &goGitLab.ListProjectPipelinesOptions{
-		Ref:     goGitLab.Ptr(ref),
-		OrderBy: goGitLab.Ptr("id"),
-		Sort:    goGitLab.Ptr("desc"),
+		ListOptions: goGitLab.ListOptions{PerPage: 1},
+		Ref:         goGitLab.Ptr(ref),
+		OrderBy:     goGitLab.Ptr("id"),
+		Sort:        goGitLab.Ptr("desc"),
 	}
 	if status != "" {
 		pipelineStatus := goGitLab.BuildStateValue(status)
