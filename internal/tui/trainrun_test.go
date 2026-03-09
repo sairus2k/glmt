@@ -189,11 +189,14 @@ func TestTrainRun_ViewShowsProgress(t *testing.T) {
 	view := m.View()
 	viewStr := view.Content
 
+	// Legend line should show all MR titles
 	assert.Contains(t, viewStr, "Fix auth token expiry")
-	assert.Contains(t, viewStr, "!42")
-	assert.Contains(t, viewStr, "Rebase onto main")
 	assert.Contains(t, viewStr, "Add rate limiting")
 	assert.Contains(t, viewStr, "Refactor user model")
+
+	// Log entry should show MR ref and step name
+	assert.Contains(t, viewStr, "!42")
+	assert.Contains(t, viewStr, "Rebase onto main")
 }
 
 func TestTrainRun_ViewShowsSkipped(t *testing.T) {
@@ -206,7 +209,7 @@ func TestTrainRun_ViewShowsSkipped(t *testing.T) {
 	view := m.View()
 	viewStr := view.Content
 
-	assert.Contains(t, viewStr, "SKIPPED")
+	// Log entry should show the skip step with MR ref
 	assert.Contains(t, viewStr, "!42")
-	assert.Contains(t, viewStr, "Fix auth token expiry")
+	assert.Contains(t, viewStr, "Skipped: rebase conflict")
 }

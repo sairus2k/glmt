@@ -100,12 +100,12 @@ func (r *Runner) Run(ctx context.Context, mrs []*gitlab.MergeRequest) (*Result, 
 		if isLast && status == MRStatusSkipped {
 			if anyMerged && lastCancelledPipelineID != 0 {
 				// 6a: Prior MR merged, restart cancelled pipeline
-				r.log(mr.IID, "restart-pipeline", fmt.Sprintf("Last MR skipped - restarting cancelled main pipeline #%d", lastCancelledPipelineID))
+				r.log(mr.IID, "restart_pipeline", fmt.Sprintf("Last MR skipped - restarting cancelled main pipeline #%d", lastCancelledPipelineID))
 				retried, retryErr := r.client.RetryPipeline(ctx, r.projectID, lastCancelledPipelineID)
 				if retryErr != nil {
-					r.log(mr.IID, "restart-pipeline", fmt.Sprintf("Failed to restart pipeline: %v", retryErr))
+					r.log(mr.IID, "restart_pipeline", fmt.Sprintf("Failed to restart pipeline: %v", retryErr))
 				} else {
-					r.log(mr.IID, "restart-pipeline", fmt.Sprintf("Restarted main pipeline: %s", retried.WebURL))
+					r.log(mr.IID, "restart_pipeline", fmt.Sprintf("Restarted main pipeline: %s", retried.WebURL))
 				}
 			}
 			// 6b: If no MR merged, do nothing
@@ -114,17 +114,17 @@ func (r *Runner) Run(ctx context.Context, mrs []*gitlab.MergeRequest) (*Result, 
 
 	// Step 7: Wait for main pipeline if any MR was merged or a pipeline was restarted
 	if anyMerged {
-		r.log(0, "main-pipeline", "Waiting for main pipeline...")
+		r.log(0, "main_pipeline_wait", "Waiting for main pipeline...")
 		pipeline, err := r.waitForMainPipeline(ctx, targetBranch)
 		if err != nil {
 			if ctx.Err() != nil {
 				return result, ctx.Err()
 			}
-			r.log(0, "main-pipeline", fmt.Sprintf("Error waiting for main pipeline: %v", err))
+			r.log(0, "main_pipeline_done", fmt.Sprintf("Error waiting for main pipeline: %v", err))
 		} else if pipeline != nil {
 			result.MainPipelineURL = pipeline.WebURL
 			result.MainPipelineStatus = pipeline.Status
-			r.log(0, "main-pipeline", fmt.Sprintf("Main pipeline %s: %s", pipeline.Status, pipeline.WebURL))
+			r.log(0, "main_pipeline_done", fmt.Sprintf("Main pipeline %s: %s", pipeline.Status, pipeline.WebURL))
 		}
 	}
 
@@ -142,26 +142,26 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 		if ctx.Err() != nil {
 			return MRStatusPending, ""
 		}
-		r.log(mr.IID, "rebase", fmt.Sprintf("Rebase conflict: %v", err))
+		r.log(mr.IID, "skip", fmt.Sprintf("Rebase conflict: %v", err))
 		return MRStatusSkipped, fmt.Sprintf("rebase conflict: %v", err)
 	}
 	r.log(mr.IID, "rebase", "Rebase successful")
 
 	// Step 2: WAIT FOR PIPELINE
-	r.log(mr.IID, "pipeline", "Waiting for pipeline...")
+	r.log(mr.IID, "pipeline_wait", "Waiting for pipeline...")
 	pipeline, err := r.waitForMRPipeline(ctx, mr.IID)
 	if err != nil {
 		if ctx.Err() != nil {
 			return MRStatusPending, ""
 		}
-		r.log(mr.IID, "pipeline", fmt.Sprintf("Pipeline error: %v", err))
+		r.log(mr.IID, "skip", fmt.Sprintf("Pipeline error: %v", err))
 		return MRStatusSkipped, fmt.Sprintf("pipeline error: %v", err)
 	}
 	if pipeline.Status != "success" {
-		r.log(mr.IID, "pipeline", fmt.Sprintf("Pipeline %s", pipeline.Status))
+		r.log(mr.IID, "pipeline_failed", fmt.Sprintf("Pipeline %s", pipeline.Status))
 		return MRStatusSkipped, fmt.Sprintf("pipeline %s", pipeline.Status)
 	}
-	r.log(mr.IID, "pipeline", "Pipeline passed")
+	r.log(mr.IID, "pipeline_success", "Pipeline passed")
 
 	// Step 3: MERGE (with SHA guard)
 	// Wait for GitLab to finish its internal merge status check
@@ -171,7 +171,7 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 		if ctx.Err() != nil {
 			return MRStatusPending, ""
 		}
-		r.log(mr.IID, "merge", fmt.Sprintf("Not mergeable: %v", err))
+		r.log(mr.IID, "skip", fmt.Sprintf("Not mergeable: %v", err))
 		return MRStatusSkipped, fmt.Sprintf("not mergeable: %v", err)
 	}
 
@@ -184,44 +184,44 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 		if errors.Is(mergeErr, ErrSHAMismatch) {
 			if isRetry {
 				// Second SHA mismatch — skip
-				r.log(mr.IID, "merge", "SHA mismatch on retry, skipping")
+				r.log(mr.IID, "skip", "SHA mismatch on retry, skipping")
 				return MRStatusSkipped, "SHA mismatch on retry"
 			}
 			// First SHA mismatch — retry from step 1
-			r.log(mr.IID, "merge", "SHA mismatch, retrying from rebase...")
+			r.log(mr.IID, "merge_sha_mismatch", "SHA mismatch, retrying from rebase...")
 			return r.processMRAttempt(ctx, mr, isLast, lastCancelledPipelineID, true)
 		}
-		r.log(mr.IID, "merge", fmt.Sprintf("Merge failed: %v", mergeErr))
+		r.log(mr.IID, "skip", fmt.Sprintf("Merge failed: %v", mergeErr))
 		return MRStatusSkipped, fmt.Sprintf("merge failed: %v", mergeErr)
 	}
 	r.log(mr.IID, "merge", "Merged successfully")
 
 	// Step 4: CANCEL MAIN PIPELINE (if more MRs remain)
 	if !isLast {
-		r.log(mr.IID, "cancel-pipeline", "Cancelling main pipeline...")
+		r.log(mr.IID, "cancel_main_pipeline", "Cancelling main pipeline...")
 		pipeline, err := r.findCancellablePipeline(ctx, mr.TargetBranch)
 		if err != nil {
-			r.log(mr.IID, "cancel-pipeline", fmt.Sprintf("Failed to list pipelines: %v", err))
+			r.log(mr.IID, "cancel_main_pipeline", fmt.Sprintf("Failed to list pipelines: %v", err))
 		} else if pipeline == nil {
-			r.log(mr.IID, "cancel-pipeline", "No main pipeline found, retrying...")
+			r.log(mr.IID, "cancel_main_pipeline", "No main pipeline found, retrying...")
 			select {
 			case <-ctx.Done():
 			case <-time.After(r.PollPipelineInterval):
 				pipeline, err = r.findCancellablePipeline(ctx, mr.TargetBranch)
 				if err != nil {
-					r.log(mr.IID, "cancel-pipeline", fmt.Sprintf("Failed to list pipelines on retry: %v", err))
+					r.log(mr.IID, "cancel_main_pipeline", fmt.Sprintf("Failed to list pipelines on retry: %v", err))
 				}
 			}
 		}
 		if pipeline != nil {
 			*lastCancelledPipelineID = pipeline.ID
 			if cancelErr := r.client.CancelPipeline(ctx, r.projectID, pipeline.ID); cancelErr != nil {
-				r.log(mr.IID, "cancel-pipeline", fmt.Sprintf("Failed to cancel pipeline: %v", cancelErr))
+				r.log(mr.IID, "cancel_main_pipeline", fmt.Sprintf("Failed to cancel pipeline: %v", cancelErr))
 			} else {
-				r.log(mr.IID, "cancel-pipeline", fmt.Sprintf("Cancelled main pipeline #%d", pipeline.ID))
+				r.log(mr.IID, "cancel_main_pipeline", fmt.Sprintf("Cancelled main pipeline #%d", pipeline.ID))
 			}
 		} else if err == nil {
-			r.log(mr.IID, "cancel-pipeline", "No main pipeline found after retry")
+			r.log(mr.IID, "cancel_main_pipeline", "No main pipeline found after retry")
 		}
 	}
 	// Step 5: If last MR and it merged, let main pipeline run naturally (done implicitly)

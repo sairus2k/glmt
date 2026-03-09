@@ -26,6 +26,8 @@ type StepEntry struct {
 	Name      string
 	Status    StepStatus
 	Message   string
+	MRIID     int
+	Timestamp time.Time
 	StartedAt time.Time
 }
 
@@ -39,6 +41,7 @@ type MRStepLog struct {
 type TrainRunModel struct {
 	mrs          []*gitlab.MergeRequest
 	mrSteps      []MRStepLog
+	logEntries   []StepEntry
 	currentMR    int
 	done         bool
 	aborted      bool
@@ -112,31 +115,51 @@ func (m TrainRunModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 }
 
 func (m TrainRunModel) handleStep(msg trainStepMsg) (tea.Model, tea.Cmd) {
-	// Find the MR index by IID
+	now := time.Now()
+
+	// Find the MR index by IID (mrIID=0 means main pipeline steps)
 	mrIdx := -1
+	targetBranch := ""
 	for i, mr := range m.mrs {
 		if mr.IID == msg.mrIID {
 			mrIdx = i
+			targetBranch = mr.TargetBranch
 			break
 		}
 	}
-	if mrIdx < 0 {
+
+	// For MR-specific steps, require a matching MR
+	if msg.mrIID != 0 && mrIdx < 0 {
 		return m, nil
 	}
 
+	// Use first MR's target branch for main pipeline steps
+	if targetBranch == "" && len(m.mrs) > 0 {
+		targetBranch = m.mrs[0].TargetBranch
+	}
+
 	// Update currentMR to reflect the MR being processed
-	if mrIdx > m.currentMR {
+	if mrIdx >= 0 && mrIdx > m.currentMR {
 		m.currentMR = mrIdx
 	}
 
 	entry := StepEntry{
-		Name:      mapStepName(msg.step, m.mrs[mrIdx].TargetBranch, msg.message),
+		Name:      mapStepName(msg.step, targetBranch, msg.message),
 		Status:    mapStepStatus(msg.step),
 		Message:   msg.message,
-		StartedAt: time.Now(),
+		MRIID:     msg.mrIID,
+		Timestamp: now,
+		StartedAt: now,
 	}
 
-	m.mrSteps[mrIdx].Steps = append(m.mrSteps[mrIdx].Steps, entry)
+	// Append to per-MR steps (for backward compat)
+	if mrIdx >= 0 {
+		m.mrSteps[mrIdx].Steps = append(m.mrSteps[mrIdx].Steps, entry)
+	}
+
+	// Always append to chronological log
+	m.logEntries = append(m.logEntries, entry)
+
 	return m, nil
 }
 
@@ -163,6 +186,8 @@ func mapStepName(step, targetBranch, message string) string {
 		return "Main pipeline running"
 	case "main_pipeline_done":
 		return fmt.Sprintf("Main pipeline %s", message)
+	case "restart_pipeline":
+		return "Restart cancelled pipeline"
 	default:
 		return step
 	}
@@ -173,7 +198,7 @@ func mapStepStatus(step string) StepStatus {
 	switch step {
 	case "pipeline_wait", "main_pipeline_wait":
 		return StepRunning
-	case "rebase", "pipeline_success", "merge", "cancel_main_pipeline", "main_pipeline_done":
+	case "rebase", "pipeline_success", "merge", "cancel_main_pipeline", "main_pipeline_done", "restart_pipeline":
 		return StepDone
 	case "pipeline_failed":
 		return StepFailed
@@ -201,64 +226,51 @@ func (m TrainRunModel) View() tea.View {
 		b.WriteString(sError.Styled(fmt.Sprintf("✗ Aborted — processed %d of %d MRs", m.currentMR, total)))
 		b.WriteString("\n\n")
 	} else {
-		currentIID := 0
-		if m.currentMR < len(m.mrs) {
-			currentIID = m.mrs[m.currentMR].IID
-		}
+		spinner := spinnerFrames[m.spinnerFrame]
 		b.WriteString("  ")
+		b.WriteString(sRunning.Styled(spinner))
+		b.WriteString(" ")
 		b.WriteString(sHeader.Styled(fmt.Sprintf("Merging %d of %d MRs", m.currentMR+1, total)))
-		b.WriteString(" · ")
-		b.WriteString(sRunning.Styled(fmt.Sprintf("!%d in progress", currentIID)))
 		b.WriteString("\n\n")
 	}
 
-	// Per-MR blocks
-	for i, mr := range m.mrs {
-		steps := m.mrSteps[i].Steps
-		isSkipped := false
-		for _, s := range steps {
-			if s.Status == StepSkipped {
-				isSkipped = true
-				break
-			}
+	// MR legend line
+	var legendParts []string
+	for _, mr := range m.mrs {
+		legendParts = append(legendParts, fmt.Sprintf("!%d %s", mr.IID, mr.Title))
+	}
+	b.WriteString("  ")
+	b.WriteString(sFaint.Styled(strings.Join(legendParts, "  ·  ")))
+	b.WriteString("\n\n")
+
+	// Chronological log entries
+	for i, entry := range m.logEntries {
+		isLast := i == len(m.logEntries)-1
+
+		// Timestamp
+		ts := entry.Timestamp.Format("15:04:05")
+		b.WriteString("  ")
+		b.WriteString(sFaint.Styled(ts))
+		b.WriteString("  ")
+
+		// Status icon
+		icon := m.styledStepIcon(entry.Status)
+		b.WriteString(icon)
+		b.WriteString("  ")
+
+		// MR reference (if MR-specific)
+		if entry.MRIID != 0 {
+			b.WriteString(sBold.Styled(fmt.Sprintf("!%d", entry.MRIID)))
+			b.WriteString("  ")
 		}
 
-		// MR header line
-		b.WriteString("  ")
-		b.WriteString(sBold.Styled(fmt.Sprintf("!%d", mr.IID)))
-		b.WriteString("  ")
-		b.WriteString(mr.Title)
-		if isSkipped {
+		// Step name
+		b.WriteString(entry.Name)
+
+		// Elapsed time for running entries (only the last one)
+		if entry.Status == StepRunning && isLast && !entry.StartedAt.IsZero() {
 			b.WriteString("  ")
-			b.WriteString(sWarning.Styled("SKIPPED"))
-		}
-		b.WriteString("\n")
-
-		// Step lines
-		for j, step := range steps {
-			isLast := j == len(steps)-1
-			connector := "├─"
-			if isLast {
-				connector = "└─"
-			}
-
-			icon := m.styledStepIcon(step.Status)
-
-			b.WriteString("  ")
-			b.WriteString(sDim.Styled(connector))
-			b.WriteString(" ")
-			b.WriteString(icon)
-			b.WriteString(" ")
-			b.WriteString(step.Name)
-			if step.Status == StepRunning && !step.StartedAt.IsZero() {
-				b.WriteString("  ")
-				b.WriteString(sFaint.Styled(formatDuration(time.Since(step.StartedAt))))
-			}
-			if step.Message != "" {
-				b.WriteString("    ")
-				b.WriteString(sFaint.Styled(step.Message))
-			}
-			b.WriteString("\n")
+			b.WriteString(sFaint.Styled(formatDuration(time.Since(entry.StartedAt))))
 		}
 
 		b.WriteString("\n")
@@ -305,6 +317,9 @@ func (m TrainRunModel) Aborted() bool { return m.aborted }
 
 // MRSteps returns the step logs for all MRs.
 func (m TrainRunModel) MRSteps() []MRStepLog { return m.mrSteps }
+
+// LogEntries returns the chronological log entries.
+func (m TrainRunModel) LogEntries() []StepEntry { return m.logEntries }
 
 // Result returns the train execution result.
 func (m TrainRunModel) Result() *train.Result { return m.result }

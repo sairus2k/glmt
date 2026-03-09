@@ -47,6 +47,7 @@ type AppModel struct {
 	userName string
 
 	trainCancel context.CancelFunc
+	trainStepCh chan trainStepMsg
 }
 
 // NewAppModel creates the app model, deciding which screen to start on.
@@ -307,6 +308,10 @@ func (m AppModel) updateTrainRun(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newRun, cmd := m.trainRun.Update(msg)
 		m.trainRun = newRun.(TrainRunModel)
 		return m, cmd
+	case trainStepMsg:
+		newRun, cmd := m.trainRun.Update(msg)
+		m.trainRun = newRun.(TrainRunModel)
+		return m, tea.Batch(cmd, waitForTrainStep(m.trainStepCh))
 	case trainDoneMsg:
 		newRun, _ := m.trainRun.Update(msg)
 		m.trainRun = newRun.(TrainRunModel)
@@ -357,23 +362,39 @@ func (m AppModel) fetchMRs() tea.Cmd {
 	}
 }
 
+func waitForTrainStep(ch chan trainStepMsg) tea.Cmd {
+	return func() tea.Msg {
+		msg, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return msg
+	}
+}
+
 func (m *AppModel) startTrain(mrs []*gitlab.MergeRequest) tea.Cmd {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.trainCancel = cancel
+
+	ch := make(chan trainStepMsg, 32)
+	m.trainStepCh = ch
+
 	client := m.client
 	projectID := m.projectID
 
-	return func() tea.Msg {
+	runCmd := func() tea.Msg {
 		runner := train.NewRunner(client, projectID, func(mrIID int, step, message string) {
-			// Logger callback — in a real impl this would send messages to the TUI
-			// via tea.Program.Send, but for now we just log
+			ch <- trainStepMsg{mrIID: mrIID, step: step, message: message}
 		})
 		runner.PollPipelineInterval = 10 * time.Second
 		runner.PollRebaseInterval = 2 * time.Second
 
 		result, _ := runner.Run(ctx, mrs)
+		close(ch)
 		return trainDoneMsg{result: result}
 	}
+
+	return tea.Batch(runCmd, waitForTrainStep(ch))
 }
 
 func detectRepoFromGit() string {
