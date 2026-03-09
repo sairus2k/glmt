@@ -418,6 +418,7 @@ func setupGitLabN(t *testing.T, n int) *testEnv {
 	createFile(t, gitlabURL, token, projectID, "main", ".gitlab-ci.yml", `
 test:
   script:
+    - if [ "$CI_COMMIT_BRANCH" = "main" ]; then sleep 20; fi
     - "true"
   tags:
     - shared
