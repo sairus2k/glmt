@@ -322,7 +322,7 @@ check_interval = 3
 
 	// Start gitlab-runner sidecar container
 	runnerReq := testcontainers.ContainerRequest{
-		Image:    "gitlab/gitlab-runner:v17.4.0",
+		Image:    "gitlab/gitlab-runner:v18.8.0",
 		Networks: []string{networkName},
 		Files: []testcontainers.ContainerFile{
 			{
@@ -362,7 +362,7 @@ func setupGitLabN(t *testing.T, n int) *testEnv {
 
 	t.Log("Starting GitLab CE container (this takes a few minutes)...")
 	gitlabReq := testcontainers.ContainerRequest{
-		Image:        "gitlab/gitlab-ce:17.4.0-ce.0",
+		Image:        "gitlab/gitlab-ce:18.8.5-ce.0",
 		ExposedPorts: []string{"80/tcp"},
 		Networks:     []string{networkName},
 		NetworkAliases: map[string][]string{
