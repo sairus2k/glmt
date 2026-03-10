@@ -982,6 +982,57 @@ func TestRunnerRun(t *testing.T) {
 			},
 		},
 		{
+			name: "stale pipeline with checking status keeps polling",
+			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
+			setup: func(m *MockClient) {
+				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					return &gitlab.MergeRequest{
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
+						DetailedMergeStatus: "mergeable",
+					}, nil
+				}
+				pipelinePollCount := 0
+				m.GetMergeRequestPipelineFn = func(_ context.Context, _ int, mrIID int) (*gitlab.Pipeline, string, error) {
+					pipelinePollCount++
+					if pipelinePollCount == 1 {
+						// Old pipeline shows success but GitLab is still checking (post-rebase)
+						return &gitlab.Pipeline{Status: "success", SHA: fmt.Sprintf("sha-%d", mrIID)}, "checking", nil
+					}
+					if pipelinePollCount == 2 {
+						// Still unchecked
+						return &gitlab.Pipeline{Status: "success", SHA: fmt.Sprintf("sha-%d", mrIID)}, "unchecked", nil
+					}
+					// Now the new pipeline result is confirmed
+					return &gitlab.Pipeline{Status: "success", SHA: fmt.Sprintf("sha-%d", mrIID)}, "mergeable", nil
+				}
+				listEmptyCount := 0
+				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
+					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
+						return []*gitlab.Pipeline{
+							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
+						}, nil
+					}
+					return nil, nil
+				}
+			},
+			assertResult: func(t *testing.T, result *Result) {
+				require.Len(t, result.MRResults, 1)
+				assert.Equal(t, MRStatusMerged, result.MRResults[0].Status)
+			},
+			assertCalls: func(t *testing.T, m *MockClient) {
+				pipelineCalls := m.CallsTo("GetMergeRequestPipeline")
+				assert.Len(t, pipelineCalls, 3, "should poll 3 times: checking, unchecked, then mergeable")
+			},
+		},
+		{
 			name: "stale merge status retries then succeeds",
 			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
 			setup: func(m *MockClient) {

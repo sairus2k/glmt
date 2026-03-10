@@ -1,6 +1,12 @@
 package gitlab
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrSHAMismatch is returned when a merge fails due to SHA mismatch (HTTP 409).
+var ErrSHAMismatch = errors.New("SHA mismatch")
 
 // MergeRequest represents a GitLab merge request with fields needed for train execution.
 type MergeRequest struct {

@@ -36,7 +36,8 @@ type Result struct {
 type Logger func(mrIID int, step string, message string)
 
 // ErrSHAMismatch is returned when a merge fails due to SHA mismatch (409).
-var ErrSHAMismatch = errors.New("SHA mismatch")
+// Deprecated: use gitlab.ErrSHAMismatch directly.
+var ErrSHAMismatch = gitlab.ErrSHAMismatch
 
 // Runner executes the merge train.
 type Runner struct {
@@ -311,9 +312,9 @@ func (r *Runner) waitForMRPipeline(ctx context.Context, mrIID int, expectedSHA s
 				if expectedSHA != "" && pipeline.SHA != expectedSHA {
 					break // stale pipeline (wrong SHA), keep polling
 				}
-				if mergeStatus == "ci_still_running" {
-					r.log(mrIID, "pipeline_wait", "Pipeline shows success but GitLab reports CI still running, keep polling...")
-					break // stale pipeline — GitLab knows CI needs re-evaluation
+				if mergeStatus == "ci_still_running" || mergeStatus == "checking" || mergeStatus == "unchecked" {
+					r.log(mrIID, "pipeline_wait", fmt.Sprintf("Pipeline shows success but merge status is '%s', keep polling...", mergeStatus))
+					break // stale pipeline — GitLab hasn't acknowledged the new pipeline yet
 				}
 				return pipeline, nil
 			case "failed", "canceled", "skipped":

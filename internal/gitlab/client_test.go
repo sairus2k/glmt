@@ -169,6 +169,7 @@ func TestMergeMergeRequest_SHAMismatch(t *testing.T) {
 	client := newTestClient(t, server)
 	err := client.MergeMergeRequest(context.Background(), 1, 10, "wrong-sha")
 	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrSHAMismatch)
 }
 
 func TestGetMergeRequestPipeline(t *testing.T) {
