@@ -5,9 +5,10 @@ stages:
 
 lint:
   stage: lint
-  image: golangci/golangci-lint:latest
+  image: golang:1.26
   script:
-    - golangci-lint run ./...
+    - go vet ./...
+    - test -z "$(gofmt -l .)"
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

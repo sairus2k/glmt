@@ -10,6 +10,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -140,10 +142,10 @@ func createProject(t *testing.T, gitlabURL, token string) int {
 	projectName := "glmt-e2e-test"
 
 	data := map[string]interface{}{
-		"name":                   projectName,
-		"visibility":             "private",
-		"initialize_with_readme": true,
-		"default_branch":         "main",
+		"name":                                  projectName,
+		"visibility":                            "private",
+		"merge_method":                          "rebase_merge",
+		"only_allow_merge_if_pipeline_succeeds": true,
 	}
 	body, _ := json.Marshal(data)
 
@@ -207,42 +209,52 @@ func findProjectByName(t *testing.T, gitlabURL, token, name string) int {
 	return 0
 }
 
-func createFile(t *testing.T, gitlabURL, token string, projectID int, branch, filePath, content string) {
+// run executes a command in a directory and fatals on error.
+func run(t *testing.T, dir, name string, args ...string) {
 	t.Helper()
-
-	data := map[string]interface{}{
-		"branch":         branch,
-		"content":        content,
-		"commit_message": fmt.Sprintf("Add %s", filePath),
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Command %s %v failed in %s: %v\n%s", name, args, dir, err, string(out))
 	}
-	body, _ := json.Marshal(data)
+}
 
-	url := fmt.Sprintf("%s/api/v4/projects/%d/repository/files/%s", gitlabURL, projectID, filePath)
-	req, _ := http.NewRequest("POST", url, bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("PRIVATE-TOKEN", token)
+// cloneRepo clones the glmt repo from GitHub to a temp directory.
+func cloneRepo(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "glmt")
+	run(t, "", "git", "clone", "https://github.com/sairus2k/glmt.git", dir)
+	run(t, dir, "git", "config", "user.email", "test@glmt-e2e.local")
+	run(t, dir, "git", "config", "user.name", "E2E Test")
+	return dir
+}
 
-	resp := apiDo(t, req)
+// pushToGitLab adds a gitlab remote and pushes main branch.
+func pushToGitLab(t *testing.T, cloneDir, gitlabURL, token string) {
+	t.Helper()
+	// Build authenticated remote URL: http://root:<token>@host:port/root/glmt-e2e-test.git
+	remote := strings.Replace(gitlabURL, "http://", fmt.Sprintf("http://root:%s@", token), 1) + "/root/glmt-e2e-test.git"
+	run(t, cloneDir, "git", "remote", "add", "gitlab", remote)
+	run(t, cloneDir, "git", "push", "gitlab", "main")
+}
 
-	if resp.StatusCode == 400 {
-		_ = resp.Body.Close()
-		// File already exists, update it
-		req2, _ := http.NewRequest("PUT", url, bytes.NewReader(body))
-		req2.Header.Set("Content-Type", "application/json")
-		req2.Header.Set("PRIVATE-TOKEN", token)
-		resp2 := apiDo(t, req2)
-		defer func() { _ = resp2.Body.Close() }()
-		if resp2.StatusCode != 200 {
-			respBody, _ := io.ReadAll(resp2.Body)
-			t.Fatalf("File update for %s failed with status %d: %s", filePath, resp2.StatusCode, string(respBody))
+// createBranchesAndPush creates n feature branches with test files and pushes them.
+func createBranchesAndPush(t *testing.T, cloneDir, gitlabURL, token string, n int) {
+	t.Helper()
+	remote := strings.Replace(gitlabURL, "http://", fmt.Sprintf("http://root:%s@", token), 1) + "/root/glmt-e2e-test.git"
+	for i := 0; i < n; i++ {
+		branch := fmt.Sprintf("feature-%c", 'a'+i)
+		fileName := fmt.Sprintf("e2e_test_feature_%c.txt", 'a'+i)
+		run(t, cloneDir, "git", "checkout", "main")
+		run(t, cloneDir, "git", "checkout", "-b", branch)
+		filePath := filepath.Join(cloneDir, fileName)
+		if err := os.WriteFile(filePath, []byte(fmt.Sprintf("Feature %c\n", 'A'+i)), 0644); err != nil {
+			t.Fatalf("Failed to write %s: %v", fileName, err)
 		}
-		return
-	}
-
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != 201 {
-		respBody, _ := io.ReadAll(resp.Body)
-		t.Fatalf("File creation for %s failed with status %d: %s", filePath, resp.StatusCode, string(respBody))
+		run(t, cloneDir, "git", "add", fileName)
+		run(t, cloneDir, "git", "commit", "-m", fmt.Sprintf("Add %s", fileName))
+		run(t, cloneDir, "git", "push", remote, branch)
 	}
 }
 
@@ -280,7 +292,7 @@ func startRunner(t *testing.T, ctx context.Context, networkName, gitlabURL, toke
 	}
 	t.Logf("Created runner ID=%d", runnerResp.ID)
 
-	// Runner config — connects to GitLab via the Docker network alias "gitlab"
+	// Runner config — Docker executor so CI jobs can use `image: golang:1.26`
 	configContent := fmt.Sprintf(`concurrent = 1
 check_interval = 3
 
@@ -288,11 +300,16 @@ check_interval = 3
   name = "e2e-runner"
   url = "http://gitlab"
   token = "%s"
-  executor = "shell"
-  [runners.cache]
-`, runnerResp.Token)
+  executor = "docker"
+  [runners.docker]
+    image = "golang:1.26"
+    privileged = false
+    volumes = ["/var/run/docker.sock:/var/run/docker.sock"]
+    network_mode = "%s"
+    pull_policy = ["if-not-present"]
+`, runnerResp.Token, networkName)
 
-	// Start gitlab-runner sidecar container
+	// Start gitlab-runner sidecar container with Docker socket mounted
 	runnerReq := testcontainers.ContainerRequest{
 		Image:    "gitlab/gitlab-runner:v18.8.0",
 		Networks: []string{networkName},
@@ -303,6 +320,9 @@ check_interval = 3
 				FileMode:          0644,
 			},
 		},
+		Mounts: testcontainers.Mounts(
+			testcontainers.BindMount("/var/run/docker.sock", "/var/run/docker.sock"),
+		),
 	}
 
 	runnerContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -384,23 +404,20 @@ func setupGitLabN(t *testing.T, n int) *testEnv {
 	token := createRootToken(t, gitlabURL)
 	t.Log("Created root access token")
 
+	t.Log("Cloning glmt repo from GitHub...")
+	cloneDir := cloneRepo(t)
+
 	projectID := createProject(t, gitlabURL, token)
 	t.Logf("Created test project with ID %d", projectID)
 
-	createFile(t, gitlabURL, token, projectID, "main", ".gitlab-ci.yml", `
-test:
-  script:
-    - if [ "$CI_COMMIT_BRANCH" = "main" ]; then sleep 20; fi
-    - "true"
-  tags:
-    - shared
-`)
-	t.Log("Created .gitlab-ci.yml on main branch")
+	t.Log("Pushing cloned repo to GitLab...")
+	pushToGitLab(t, cloneDir, gitlabURL, token)
 
 	runnerContainer := startRunner(t, ctx, networkName, gitlabURL, token)
 	t.Log("Runner sidecar started")
 
-	waitForAPI(t, gitlabURL)
+	t.Log("Creating feature branches and pushing...")
+	createBranchesAndPush(t, cloneDir, gitlabURL, token, n)
 
 	mrIIDs := createTestMRsN(t, gitlabURL, token, projectID, n)
 	t.Logf("Created %d test MRs: %v", len(mrIIDs), mrIIDs)
@@ -429,22 +446,7 @@ func createTestMRsN(t *testing.T, gitlabURL, token string, projectID, n int) []i
 
 	for i := 0; i < n; i++ {
 		branchName := fmt.Sprintf("feature-%c", 'a'+i)
-		fileName := fmt.Sprintf("feature_%c.txt", 'a'+i)
-		content := fmt.Sprintf("Feature %c content\n", 'A'+i)
 		mrTitle := fmt.Sprintf("Add feature %c", 'A'+i)
-
-		brData := map[string]interface{}{
-			"branch": branchName,
-			"ref":    "main",
-		}
-		body, _ := json.Marshal(brData)
-		req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v4/projects/%d/repository/branches", gitlabURL, projectID), bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("PRIVATE-TOKEN", token)
-		resp := apiDo(t, req)
-		_ = resp.Body.Close()
-
-		createFile(t, gitlabURL, token, projectID, branchName, fileName, content)
 
 		mrData := map[string]interface{}{
 			"source_branch": branchName,
