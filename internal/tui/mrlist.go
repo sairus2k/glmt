@@ -233,8 +233,15 @@ func (m MRListModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	// Always allow these actions regardless of MR count.
+	switch key {
+	case "r":
+		return m, func() tea.Msg { return changeRepoMsg{} }
+	case "R":
+		return m, func() tea.Msg { return refetchMRsMsg{} }
+	}
+
 	if total == 0 {
-		// Handle quit even with no MRs.
 		if key == "q" {
 			return m, tea.Quit
 		}
@@ -268,12 +275,6 @@ func (m MRListModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case "A":
 		m = m.deselectAll()
-
-	case "r":
-		return m, func() tea.Msg { return changeRepoMsg{} }
-
-	case "R":
-		return m, func() tea.Msg { return refetchMRsMsg{} }
 
 	case "enter":
 		return m.startTrain()
