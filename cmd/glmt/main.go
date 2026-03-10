@@ -39,7 +39,7 @@ func run() error {
 		return runNonInteractive(*host, *token, *projectID, *mrs)
 	}
 
-	return runTUI()
+	return runTUI(*host, *token, *projectID)
 }
 
 func runNonInteractive(host, token string, projectID int, mrsFlag string) error {
@@ -182,12 +182,23 @@ func configPath() string {
 	return config.DefaultPath()
 }
 
-func runTUI() error {
+func runTUI(flagHost, flagToken string, flagProjectID int) error {
 	// Load config
 	cfgPath := configPath()
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// Override config with CLI flags
+	if flagHost != "" {
+		cfg.GitLab.Host = flagHost
+	}
+	if flagToken != "" {
+		cfg.GitLab.Token = flagToken
+	}
+	if flagProjectID != 0 {
+		cfg.Defaults.ProjectID = flagProjectID
 	}
 
 	// Try to read existing credentials: glab config first, then glmt config
