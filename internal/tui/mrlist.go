@@ -72,7 +72,7 @@ func classifyMR(mr *gitlab.MergeRequest) (eligible bool, reason string) {
 	if mr.HeadPipelineStatus == "running" || mr.HeadPipelineStatus == "pending" {
 		return false, "pipeline running"
 	}
-	if mr.HeadPipelineStatus != "success" {
+	if mr.HeadPipelineStatus != "success" && mr.HeadPipelineStatus != "skipped" {
 		return false, "pipeline failed"
 	}
 	switch mr.DetailedMergeStatus {

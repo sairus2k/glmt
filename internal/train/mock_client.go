@@ -22,7 +22,7 @@ type MockClient struct {
 	ListProjectsFn            func(ctx context.Context, search string) ([]*gitlab.Project, error)
 	ListMergeRequestsFullFn   func(ctx context.Context, projectPath string) ([]*gitlab.MergeRequest, error)
 	GetMergeRequestFn         func(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error)
-	RebaseMergeRequestFn      func(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error)
+	RebaseMergeRequestFn      func(ctx context.Context, projectID, mrIID int, skipCI bool) (*gitlab.MergeRequest, error)
 	MergeMergeRequestFn       func(ctx context.Context, projectID, mrIID int, sha string) error
 	GetMergeRequestPipelineFn func(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, string, error)
 	ListPipelinesFn           func(ctx context.Context, projectID int, ref, status string) ([]*gitlab.Pipeline, error)
@@ -66,10 +66,10 @@ func (m *MockClient) GetMergeRequest(ctx context.Context, projectID, mrIID int) 
 	return &gitlab.MergeRequest{IID: mrIID, DetailedMergeStatus: "mergeable"}, nil
 }
 
-func (m *MockClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error) {
-	m.record("RebaseMergeRequest", projectID, mrIID)
+func (m *MockClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int, skipCI bool) (*gitlab.MergeRequest, error) {
+	m.record("RebaseMergeRequest", projectID, mrIID, skipCI)
 	if m.RebaseMergeRequestFn != nil {
-		return m.RebaseMergeRequestFn(ctx, projectID, mrIID)
+		return m.RebaseMergeRequestFn(ctx, projectID, mrIID, skipCI)
 	}
 	return &gitlab.MergeRequest{IID: mrIID, SHA: fmt.Sprintf("sha-%d", mrIID)}, nil
 }

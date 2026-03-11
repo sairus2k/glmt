@@ -44,6 +44,8 @@ type Runner struct {
 	client    gitlab.Client
 	projectID int
 	logger    Logger
+	// SkipCI prevents the branch pipeline from running after rebase.
+	SkipCI bool
 	// Configurable intervals for testing
 	PollRebaseInterval       time.Duration
 	PollPipelineInterval     time.Duration
@@ -156,7 +158,7 @@ func (r *Runner) processMR(ctx context.Context, mr *gitlab.MergeRequest, isLast 
 func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, isLast bool, lastCancelledPipelineID *int, isRetry bool) (MRStatus, string) {
 	// Step 1: REBASE
 	r.log(mr.IID, "rebase", "Rebasing merge request...")
-	rebasedMR, err := r.client.RebaseMergeRequest(ctx, r.projectID, mr.IID)
+	rebasedMR, err := r.client.RebaseMergeRequest(ctx, r.projectID, mr.IID, r.SkipCI)
 	if err != nil {
 		if ctx.Err() != nil {
 			return MRStatusPending, ""
@@ -166,21 +168,25 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 	}
 	r.log(mr.IID, "rebase", "Rebase successful")
 
-	// Step 2: WAIT FOR PIPELINE
-	r.log(mr.IID, "pipeline_wait", "Waiting for pipeline...")
-	pipeline, err := r.waitForMRPipeline(ctx, mr.IID, rebasedMR.SHA)
-	if err != nil {
-		if ctx.Err() != nil {
-			return MRStatusPending, ""
+	// Step 2: WAIT FOR PIPELINE (skip when skip_ci is enabled)
+	if r.SkipCI {
+		r.log(mr.IID, "pipeline_skip", "Skipping pipeline wait (skip_ci enabled)")
+	} else {
+		r.log(mr.IID, "pipeline_wait", "Waiting for pipeline...")
+		pipeline, err := r.waitForMRPipeline(ctx, mr.IID, rebasedMR.SHA)
+		if err != nil {
+			if ctx.Err() != nil {
+				return MRStatusPending, ""
+			}
+			r.log(mr.IID, "skip", fmt.Sprintf("Pipeline error: %v", err))
+			return MRStatusSkipped, fmt.Sprintf("pipeline error: %v", err)
 		}
-		r.log(mr.IID, "skip", fmt.Sprintf("Pipeline error: %v", err))
-		return MRStatusSkipped, fmt.Sprintf("pipeline error: %v", err)
+		if pipeline.Status != "success" {
+			r.log(mr.IID, "pipeline_failed", fmt.Sprintf("Pipeline %s", pipeline.Status))
+			return MRStatusSkipped, fmt.Sprintf("pipeline %s", pipeline.Status)
+		}
+		r.log(mr.IID, "pipeline_success", "Pipeline passed")
 	}
-	if pipeline.Status != "success" {
-		r.log(mr.IID, "pipeline_failed", fmt.Sprintf("Pipeline %s", pipeline.Status))
-		return MRStatusSkipped, fmt.Sprintf("pipeline %s", pipeline.Status)
-	}
-	r.log(mr.IID, "pipeline_success", "Pipeline passed")
 
 	// Step 3: MERGE (with SHA guard)
 	// Wait for GitLab to finish its internal merge status check

@@ -108,8 +108,12 @@ func (c *APIClient) GetMergeRequest(ctx context.Context, projectID, mrIID int) (
 }
 
 // RebaseMergeRequest triggers a rebase of the MR onto its target branch.
-func (c *APIClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int) (*MergeRequest, error) {
-	_, err := c.client.MergeRequests.RebaseMergeRequest(int64(projectID), int64(mrIID), nil, goGitLab.WithContext(ctx))
+func (c *APIClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int, skipCI bool) (*MergeRequest, error) {
+	var opts *goGitLab.RebaseMergeRequestOptions
+	if skipCI {
+		opts = &goGitLab.RebaseMergeRequestOptions{SkipCI: goGitLab.Ptr(true)}
+	}
+	_, err := c.client.MergeRequests.RebaseMergeRequest(int64(projectID), int64(mrIID), opts, goGitLab.WithContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("triggering rebase for MR %d: %w", mrIID, err)
 	}

@@ -348,7 +348,7 @@ func TestRunnerRun(t *testing.T) {
 			},
 			setup: func(m *MockClient) {
 				// MR 1 rebase fails with conflict
-				m.RebaseMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+				m.RebaseMergeRequestFn = func(_ context.Context, _ int, mrIID int, _ bool) (*gitlab.MergeRequest, error) {
 					if mrIID == 1 {
 						return nil, fmt.Errorf("rebase conflict")
 					}
@@ -401,7 +401,7 @@ func TestRunnerRun(t *testing.T) {
 			},
 			setup: func(m *MockClient) {
 				// All rebases fail
-				m.RebaseMergeRequestFn = func(_ context.Context, _ int, _ int) (*gitlab.MergeRequest, error) {
+				m.RebaseMergeRequestFn = func(_ context.Context, _ int, _ int, _ bool) (*gitlab.MergeRequest, error) {
 					return nil, fmt.Errorf("rebase conflict")
 				}
 			},
@@ -886,7 +886,7 @@ func TestRunnerRun(t *testing.T) {
 			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
 			setup: func(m *MockClient) {
 				// Rebase returns a new SHA
-				m.RebaseMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+				m.RebaseMergeRequestFn = func(_ context.Context, _ int, mrIID int, _ bool) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{IID: mrIID, SHA: "new-sha-after-rebase"}, nil
 				}
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {

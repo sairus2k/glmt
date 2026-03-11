@@ -218,6 +218,8 @@ func mapStepName(step, targetBranch, message string) string {
 		return "Pipeline running"
 	case "pipeline_success":
 		return "Pipeline passed"
+	case "pipeline_skip":
+		return "Pipeline skipped"
 	case "pipeline_failed":
 		return "Pipeline failed"
 	case "merge":
@@ -244,7 +246,7 @@ func mapStepStatus(step string) StepStatus {
 	switch step {
 	case "pipeline_wait", "main_pipeline_wait":
 		return StepRunning
-	case "rebase", "pipeline_success", "merge", "cancel_main_pipeline", "main_pipeline_done", "restart_pipeline":
+	case "rebase", "pipeline_success", "pipeline_skip", "merge", "cancel_main_pipeline", "main_pipeline_done", "restart_pipeline":
 		return StepDone
 	case "pipeline_failed":
 		return StepFailed
