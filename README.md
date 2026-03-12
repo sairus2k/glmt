@@ -2,6 +2,9 @@
 
 A local interactive TUI that merges a sequence of GitLab MRs one by one.
 
+[![Go](https://github.com/sairus2k/glmt/actions/workflows/ci.yml/badge.svg)](https://github.com/sairus2k/glmt/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/sairus2k/glmt)](https://goreportcard.com/report/github.com/sairus2k/glmt)
+
 ## Why
 
 GitLab merge trains are a Premium/Ultimate feature. On self-hosted GitLab Free,
