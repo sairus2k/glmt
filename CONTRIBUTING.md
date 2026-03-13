@@ -81,7 +81,20 @@ All three must pass before merging.
 
 ## Releases
 
-Releases are handled via [GoReleaser](https://goreleaser.com/) and triggered by pushing a Git tag. Binaries are built for Linux and macOS (amd64/arm64) and published to GitHub Releases and Homebrew.
+Releases are handled via [GoReleaser](https://goreleaser.com/) and triggered automatically by pushing a Git tag:
+
+```bash
+git tag v0.x.x
+git push origin v0.x.x
+```
+
+This triggers a GitHub Actions workflow that:
+
+1. Builds binaries for Linux and macOS (amd64/arm64)
+2. Creates a GitHub Release with `.tar.gz` archives
+3. Updates the [Homebrew tap](https://github.com/sairus2k/homebrew-tap)
+
+The `TAP_GITHUB_TOKEN` repository secret is required for the Homebrew tap update.
 
 ## License
 
