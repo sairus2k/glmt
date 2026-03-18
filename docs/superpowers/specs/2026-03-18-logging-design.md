@@ -32,13 +32,19 @@ Each run creates a new file named with an ISO 8601 timestamp at millisecond prec
 
 JSON Lines — one JSON object per line. Three categories:
 
-### Run metadata (first line)
+### Session start (first line, written immediately when log file is created)
+
+```json
+{"ts":"2026-03-18T15:04:05.000Z","level":"meta","msg":"session started","glmt_version":"dev"}
+```
+
+The `glmt_version` field is hardcoded to `"dev"` initially. A build-time `ldflags` variable can be added later. This entry is written as soon as the log file is opened, before any API calls — so the log file is never empty when `--log` is used.
+
+### Train metadata (written when a train is started)
 
 ```json
 {"ts":"2026-03-18T15:04:05.123Z","level":"meta","msg":"train started","project_id":123,"mrs":[42,38,35],"glmt_version":"dev"}
 ```
-
-The `glmt_version` field is hardcoded to `"dev"` initially. A build-time `ldflags` variable can be added later.
 
 ### Step logs (level: info)
 
@@ -132,20 +138,19 @@ Each of the 10 `LoggingClient` methods manually constructs its `args` map with t
 
 **`cmd/glmt/main.go` (non-interactive):** Add `--log` flag (ignored for the `logout` subcommand). When set:
 1. Create `FileLogger` with token for scrubbing
-2. Wrap `gitlab.APIClient` in `LoggingClient`
-3. Create composite logger
-4. Call `LogMeta` before `runner.Run()`
-5. Call `LogRunEnd` after `runner.Run()`
+2. Call `LogSession()` immediately — log file is never empty
+3. Wrap `gitlab.APIClient` in `LoggingClient` BEFORE any API calls
+4. Create composite logger for train step entries
+5. Call `LogMeta` before `runner.Run()`
+6. Call `LogRunEnd` after `runner.Run()`
 
-**`internal/tui/app.go` (TUI mode):** Add a public `FileLogger *log.FileLogger` field on `AppModel`. Callers set it after construction (`model.FileLogger = fileLogger`) rather than via a constructor parameter — this avoids changing the `NewAppModel` signature and breaking existing call sites. The `--log` flag is only supported when credentials are already available (from config or CLI flags). If the user enters credentials through the Setup screen, logging is not available for that run — this avoids complexity of late-binding the token. A warning is printed if `--log` is used without pre-existing credentials.
+**`cmd/glmt/main.go` (TUI mode):** Create `FileLogger` and `LoggingClient` in `runTUI` BEFORE creating `AppModel`. This means ALL API calls — `fetchCurrentUser`, `fetchProjects`, `fetchMRs`, and train calls — are logged, not just the train. The wrapped client is set on `AppModel` via `SetClient()`. `LogSession()` is called immediately.
 
-When `FileLogger` is present, `startTrain()` wires logging inside the goroutine:
-1. Wrap `m.client` in `LoggingClient` locally (do not mutate `m.client`, which is shared for non-train API calls like `fetchMRs`)
-2. Call `LogMeta` before `runner.Run()`
-3. Call `LogRunEnd` after `runner.Run()` returns
-4. `defer fileLogger.Close()` inside the goroutine
+The `--log` flag is only supported when credentials are already available (from config or CLI flags). If the user enters credentials through the Setup screen, logging is not available for that run. A warning is printed if `--log` is used without pre-existing credentials.
 
-The composite logger wraps the TUI channel logger the same way as non-interactive mode.
+**`internal/tui/app.go`:** Add a public `FileLogger *log.FileLogger` field on `AppModel` and `Client()`/`SetClient()` accessors. `startTrain()` uses the already-wrapped client and adds the composite logger for train step entries, plus `LogMeta`/`LogRunEnd` calls.
+
+`defer fileLogger.Close()` is in `runTUI`, not in `startTrain()` — this ensures cleanup if the user exits without starting a train.
 
 ### Files changed
 
