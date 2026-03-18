@@ -7,11 +7,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/sairus2k/glmt/internal/auth"
 	"github.com/sairus2k/glmt/internal/config"
 	"github.com/sairus2k/glmt/internal/gitlab"
+	glmtlog "github.com/sairus2k/glmt/internal/log"
 	"github.com/sairus2k/glmt/internal/train"
 	"github.com/sairus2k/glmt/internal/tui"
 )
@@ -33,16 +35,17 @@ func run() error {
 	token := flag.String("token", "", "Personal access token")
 	projectID := flag.Int("project-id", 0, "GitLab project ID")
 	mrs := flag.String("mrs", "", "Comma-separated list of MR IIDs to merge (e.g. 42,38,35)")
+	enableLog := flag.Bool("log", false, "Write JSON Lines log file to ~/.local/state/glmt/")
 	flag.Parse()
 
 	if *nonInteractive {
-		return runNonInteractive(*host, *token, *projectID, *mrs)
+		return runNonInteractive(*host, *token, *projectID, *mrs, *enableLog)
 	}
 
-	return runTUI(*host, *token, *projectID)
+	return runTUI(*host, *token, *projectID, *enableLog)
 }
 
-func runNonInteractive(host, token string, projectID int, mrsFlag string) error {
+func runNonInteractive(host, token string, projectID int, mrsFlag string, enableLog bool) error {
 	// Fall back to saved config for host/token if not provided via flags
 	if host == "" || token == "" {
 		cfgPath := configPath()
@@ -99,19 +102,34 @@ func runNonInteractive(host, token string, projectID int, mrsFlag string) error 
 		return fmt.Errorf("creating GitLab client: %w", err)
 	}
 
+	// Set up file logging — wraps client BEFORE any API calls
+	var fileLogger *glmtlog.FileLogger
+	var apiClient gitlab.Client = client
+	if enableLog {
+		fl, err := glmtlog.NewFileLogger(glmtlog.DefaultStateDir(), token)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not create log file: %v\n", err)
+		} else {
+			fileLogger = fl
+			defer fileLogger.Close()
+			fileLogger.LogSession()
+			apiClient = glmtlog.NewLoggingClient(client, fileLogger)
+		}
+	}
+
 	ctx := context.Background()
 
-	// Fetch MR objects
+	// Fetch MR objects — these API calls are now logged via apiClient
 	mrs := make([]*gitlab.MergeRequest, 0, len(mrIIDs))
 	for _, iid := range mrIIDs {
-		mr, err := client.GetMergeRequest(ctx, projectID, iid)
+		mr, err := apiClient.GetMergeRequest(ctx, projectID, iid)
 		if err != nil {
 			return fmt.Errorf("fetching MR !%d: %w", iid, err)
 		}
 		mrs = append(mrs, mr)
 	}
 
-	// Create logger
+	// Create logger (composite if file logging enabled)
 	logger := func(mrIID int, step string, message string) {
 		if mrIID > 0 {
 			fmt.Printf("[MR !%d] [%s] %s\n", mrIID, step, message)
@@ -119,10 +137,33 @@ func runNonInteractive(host, token string, projectID int, mrsFlag string) error 
 			fmt.Printf("[%s] %s\n", step, message)
 		}
 	}
+	if fileLogger != nil {
+		origLogger := logger
+		logger = func(mrIID int, step string, message string) {
+			origLogger(mrIID, step, message)
+			fileLogger.LogStep(mrIID, step, message)
+		}
+	}
 
-	// Run the train
-	runner := train.NewRunner(client, projectID, logger)
+	// Log train meta before run
+	if fileLogger != nil {
+		fileLogger.LogMeta(projectID, mrIIDs)
+	}
+
+	trainStart := time.Now()
+	runner := train.NewRunner(apiClient, projectID, logger)
 	result, err := runner.Run(ctx, mrs)
+
+	// Log run end (before error check — partial results are still logged)
+	if fileLogger != nil {
+		merged, skipped, pending := countResults(result)
+		pipelineStatus := ""
+		if result != nil {
+			pipelineStatus = result.MainPipelineStatus
+		}
+		fileLogger.LogRunEnd(merged, skipped, pending, pipelineStatus, time.Since(trainStart))
+	}
+
 	if err != nil {
 		return fmt.Errorf("running train: %w", err)
 	}
@@ -155,6 +196,23 @@ func runNonInteractive(host, token string, projectID int, mrsFlag string) error 
 	return nil
 }
 
+func countResults(result *train.Result) (merged, skipped, pending int) {
+	if result == nil {
+		return
+	}
+	for _, mr := range result.MRResults {
+		switch mr.Status {
+		case train.MRStatusMerged:
+			merged++
+		case train.MRStatusSkipped:
+			skipped++
+		default:
+			pending++
+		}
+	}
+	return
+}
+
 func runLogout() error {
 	return logout(configPath(), auth.DefaultConfigDir())
 }
@@ -182,7 +240,7 @@ func configPath() string {
 	return config.DefaultPath()
 }
 
-func runTUI(flagHost, flagToken string, flagProjectID int) error {
+func runTUI(flagHost, flagToken string, flagProjectID int, enableLog bool) error {
 	// Load config
 	cfgPath := configPath()
 	cfg, err := config.Load(cfgPath)
@@ -218,8 +276,33 @@ func runTUI(flagHost, flagToken string, flagProjectID int) error {
 		}
 	}
 
+	// Set up file logging — wraps client BEFORE AppModel creation
+	var fileLogger *glmtlog.FileLogger
+	if enableLog {
+		if creds == nil {
+			fmt.Fprintf(os.Stderr, "Warning: --log requires pre-existing credentials (config or flags), logging disabled\n")
+		} else {
+			fl, err := glmtlog.NewFileLogger(glmtlog.DefaultStateDir(), creds.Token)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not create log file: %v\n", err)
+			} else {
+				fileLogger = fl
+				defer fileLogger.Close()
+				fileLogger.LogSession()
+			}
+		}
+	}
+
 	// Start TUI
 	model := tui.NewAppModel(creds, cfg, cfgPath, flagProjectID)
+	model.FileLogger = fileLogger
+
+	// Wrap m.client in LoggingClient so ALL API calls are logged
+	// (fetchCurrentUser, fetchProjects, fetchMRs, and train calls)
+	if fileLogger != nil && model.Client() != nil {
+		model.SetClient(glmtlog.NewLoggingClient(model.Client(), fileLogger))
+	}
+
 	p := tea.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("running TUI: %w", err)

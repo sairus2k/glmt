@@ -10,6 +10,7 @@ import (
 	"github.com/sairus2k/glmt/internal/auth"
 	"github.com/sairus2k/glmt/internal/config"
 	"github.com/sairus2k/glmt/internal/gitlab"
+	glmtlog "github.com/sairus2k/glmt/internal/log"
 	"github.com/sairus2k/glmt/internal/train"
 )
 
@@ -49,6 +50,8 @@ type AppModel struct {
 
 	trainCancel context.CancelFunc
 	trainStepCh chan trainStepMsg
+
+	FileLogger *glmtlog.FileLogger
 }
 
 // NewAppModel creates the app model, deciding which screen to start on.
@@ -98,6 +101,12 @@ func NewAppModel(creds *auth.Credentials, cfg *config.Config, cfgPath string, ov
 
 	return m
 }
+
+// Client returns the GitLab client.
+func (m AppModel) Client() gitlab.Client { return m.client }
+
+// SetClient replaces the GitLab client (used for wrapping with LoggingClient).
+func (m *AppModel) SetClient(c gitlab.Client) { m.client = c }
 
 func (m AppModel) Init() tea.Cmd {
 	switch m.screen {
@@ -461,17 +470,62 @@ func (m *AppModel) startTrain(mrs []*gitlab.MergeRequest) tea.Cmd {
 	ch := make(chan trainStepMsg, 32)
 	m.trainStepCh = ch
 
-	client := m.client
+	client := m.client // already wrapped in LoggingClient if --log was used
 	projectID := m.projectID
+	fileLogger := m.FileLogger
 
 	runCmd := func() tea.Msg {
-		runner := train.NewRunner(client, projectID, func(mrIID int, step, message string) {
+		trainStart := time.Now()
+
+		// Build logger: TUI channel + optional file
+		logger := func(mrIID int, step, message string) {
 			ch <- trainStepMsg{mrIID: mrIID, step: step, message: message}
-		})
+		}
+		if fileLogger != nil {
+			origLogger := logger
+			logger = func(mrIID int, step, message string) {
+				origLogger(mrIID, step, message)
+				fileLogger.LogStep(mrIID, step, message)
+			}
+		}
+
+		// Log train meta
+		if fileLogger != nil {
+			iids := make([]int, len(mrs))
+			for i, mr := range mrs {
+				iids[i] = mr.IID
+			}
+			fileLogger.LogMeta(projectID, iids)
+		}
+
+		runner := train.NewRunner(client, projectID, logger)
 		runner.PollPipelineInterval = 10 * time.Second
 		runner.PollRebaseInterval = 2 * time.Second
 
 		result, _ := runner.Run(ctx, mrs)
+
+		// Log run end
+		if fileLogger != nil {
+			merged, skipped, pending := 0, 0, 0
+			if result != nil {
+				for _, mr := range result.MRResults {
+					switch mr.Status {
+					case train.MRStatusMerged:
+						merged++
+					case train.MRStatusSkipped:
+						skipped++
+					default:
+						pending++
+					}
+				}
+			}
+			pipelineStatus := ""
+			if result != nil {
+				pipelineStatus = result.MainPipelineStatus
+			}
+			fileLogger.LogRunEnd(merged, skipped, pending, pipelineStatus, time.Since(trainStart))
+		}
+
 		close(ch)
 		return trainDoneMsg{result: result}
 	}
