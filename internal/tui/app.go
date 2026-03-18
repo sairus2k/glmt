@@ -326,7 +326,12 @@ func (m AppModel) updateMRList(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				cmds = append(cmds, spinnerTick())
 			}
-			cmds = append(cmds, scheduleBackgroundRefetch())
+			// Unchecked statuses resolve quickly (4s); pipelines take minutes (15s).
+			if m.mrList.HasUncheckedMRs() {
+				cmds = append(cmds, scheduleBackgroundRefetch())
+			} else {
+				cmds = append(cmds, scheduleBackgroundRefetchAfter(15*time.Second))
+			}
 		}
 		return m, tea.Batch(cmds...)
 	}
@@ -362,7 +367,12 @@ func (m AppModel) triggerMergeChecks(iids []int) tea.Cmd {
 
 // scheduleBackgroundRefetch returns a command that sends backgroundRefetchMsg after a delay.
 func scheduleBackgroundRefetch() tea.Cmd {
-	return tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
+	return scheduleBackgroundRefetchAfter(4 * time.Second)
+}
+
+// scheduleBackgroundRefetchAfter returns a command that sends backgroundRefetchMsg after the given delay.
+func scheduleBackgroundRefetchAfter(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg {
 		return backgroundRefetchMsg{}
 	})
 }

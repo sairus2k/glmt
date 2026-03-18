@@ -312,7 +312,7 @@ func TestMRList_ViewShowsBadges(t *testing.T) {
 	viewStr := view.Content
 
 	assert.Contains(t, viewStr, "[draft]")
-	assert.Contains(t, viewStr, "[pipeline running]")
+	assert.Contains(t, viewStr, spinnerFrames[0]+" pipeline running]")
 	assert.Contains(t, viewStr, "[broken_status]")
 	assert.Contains(t, viewStr, "[unresolved threads]")
 }
@@ -447,6 +447,67 @@ func TestMRList_ViewShowsSpinnerBadge(t *testing.T) {
 	// The badge should contain the spinner frame character.
 	assert.Contains(t, viewStr, spinnerFrames[0]+" checking")
 	assert.Contains(t, viewStr, spinnerFrames[0]+" unchecked")
+}
+
+func TestMRList_RunningPipelineSetsRefreshing(t *testing.T) {
+	mrs := []*gitlab.MergeRequest{eligibleMR1, runningMR}
+	m := loadModel(mrs)
+
+	assert.True(t, m.Refreshing(), "refreshing should be true when running pipeline present")
+	assert.True(t, m.HasRunningPipelines())
+}
+
+func TestMRList_RunningPipelineClearsRefreshing(t *testing.T) {
+	// Initial load: pipeline running → refreshing.
+	mrs := []*gitlab.MergeRequest{eligibleMR1, runningMR}
+	m := loadModel(mrs)
+	assert.True(t, m.Refreshing())
+
+	// Background refetch: pipeline completed (success) → now eligible.
+	resolvedMR := &gitlab.MergeRequest{
+		IID: 47, Title: "Add oauth flow", Author: "eve",
+		HeadPipelineStatus: "success", DetailedMergeStatus: "mergeable",
+		BlockingDiscussionsResolved: true,
+	}
+	updated, _ := m.Update(mrsLoadedMsg{mrs: []*gitlab.MergeRequest{eligibleMR1, resolvedMR}})
+	m = updated.(MRListModel)
+
+	assert.False(t, m.Refreshing(), "refreshing should be false after pipeline completed")
+	assert.False(t, m.HasRunningPipelines())
+}
+
+func TestMRList_ViewShowsSpinnerForRunningPipeline(t *testing.T) {
+	mrs := []*gitlab.MergeRequest{eligibleMR1, runningMR}
+	m := loadModel(mrs)
+
+	view := m.View()
+	viewStr := view.Content
+
+	assert.Contains(t, viewStr, spinnerFrames[0]+" pipeline running")
+}
+
+func TestMRList_BackgroundUpdatePreservesSelectionWithRunningPipeline(t *testing.T) {
+	// Initial load with running pipeline MR.
+	mrs := []*gitlab.MergeRequest{eligibleMR1, eligibleMR2, runningMR}
+	m := loadModel(mrs)
+	assert.True(t, m.Refreshing())
+
+	// Select MR 42.
+	m = sendKey(m, " ")
+	assert.Equal(t, []int{42}, m.Selected())
+
+	// Move cursor to MR 38.
+	m = sendKey(m, "down")
+	assert.Equal(t, 1, m.Cursor())
+
+	// Simulate background refetch (loading is already false).
+	updated, _ := m.Update(mrsLoadedMsg{mrs: mrs})
+	m = updated.(MRListModel)
+
+	// Selection and cursor preserved.
+	assert.Equal(t, []int{42}, m.Selected())
+	assert.Equal(t, 1, m.Cursor())
+	assert.True(t, m.Refreshing())
 }
 
 func TestMRList_ViewShowsRefreshingIndicator(t *testing.T) {

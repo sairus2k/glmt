@@ -148,7 +148,7 @@ func (m MRListModel) handleMRsLoaded(msg mrsLoadedMsg) MRListModel {
 		mrs := classifyAndSort(msg.mrs)
 		m.eligible = mrs.eligible
 		m.ineligible = mrs.ineligible
-		m.refreshing = m.hasUncheckedMRs()
+		m.refreshing = m.needsAutoRefresh()
 		if !m.refreshing {
 			m.userRefresh = false
 		}
@@ -182,7 +182,7 @@ func (m MRListModel) handleMRsLoaded(msg mrsLoadedMsg) MRListModel {
 		m.cursor = total - 1
 	}
 
-	m.refreshing = m.hasUncheckedMRs()
+	m.refreshing = m.needsAutoRefresh()
 	if !m.refreshing {
 		m.userRefresh = false
 	}
@@ -223,6 +223,31 @@ func (m MRListModel) hasUncheckedMRs() bool {
 		}
 	}
 	return false
+}
+
+// hasRunningPipelines returns true if any ineligible MR has "pipeline running" status.
+func (m MRListModel) hasRunningPipelines() bool {
+	for _, imr := range m.ineligible {
+		if imr.Reason == "pipeline running" {
+			return true
+		}
+	}
+	return false
+}
+
+// needsAutoRefresh returns true if the list should auto-refresh (unchecked MRs or running pipelines).
+func (m MRListModel) needsAutoRefresh() bool {
+	return m.hasUncheckedMRs() || m.hasRunningPipelines()
+}
+
+// HasUncheckedMRs is an exported getter for app.go to query.
+func (m MRListModel) HasUncheckedMRs() bool {
+	return m.hasUncheckedMRs()
+}
+
+// HasRunningPipelines is an exported getter for app.go to query.
+func (m MRListModel) HasRunningPipelines() bool {
+	return m.hasRunningPipelines()
 }
 
 func (m MRListModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -390,7 +415,7 @@ func (m MRListModel) computeLayout() tableLayout {
 			l.maxApprovals = max(l.maxApprovals, ansi.StringWidth(fmt.Sprintf("✓ %d", mr.ApprovalCount)))
 		}
 		badgeText := fmt.Sprintf("[%s]", imr.Reason)
-		if imr.Reason == "checking" || imr.Reason == "unchecked" {
+		if imr.Reason == "checking" || imr.Reason == "unchecked" || imr.Reason == "pipeline running" {
 			badgeText = fmt.Sprintf("[⠋ %s]", imr.Reason)
 		}
 		l.maxBadge = max(l.maxBadge, ansi.StringWidth(badgeText))
@@ -619,7 +644,7 @@ func (m MRListModel) View() tea.View {
 		if lay.maxBadge > 0 {
 			lb.WriteString("  ")
 			var badge string
-			if imr.Reason == "checking" || imr.Reason == "unchecked" {
+			if imr.Reason == "checking" || imr.Reason == "unchecked" || imr.Reason == "pipeline running" {
 				badge = fmt.Sprintf("[%s %s]", spinnerFrames[m.spinnerFrame], imr.Reason)
 			} else {
 				badge = fmt.Sprintf("[%s]", imr.Reason)
