@@ -1,0 +1,94 @@
+package log
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/sairus2k/glmt/internal/gitlab"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+type mockClient struct {
+	getCalled    bool
+	rebaseCalled bool
+}
+
+func (m *mockClient) GetCurrentUser(ctx context.Context) (*gitlab.User, error) {
+	m.getCalled = true
+	return &gitlab.User{ID: 1, Username: "test"}, nil
+}
+func (m *mockClient) ListProjects(ctx context.Context, search string) ([]*gitlab.Project, error) {
+	return nil, nil
+}
+func (m *mockClient) ListMergeRequestsFull(ctx context.Context, projectPath string) ([]*gitlab.MergeRequest, error) {
+	return nil, nil
+}
+func (m *mockClient) GetMergeRequest(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error) {
+	return &gitlab.MergeRequest{IID: mrIID}, nil
+}
+func (m *mockClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error) {
+	m.rebaseCalled = true
+	return &gitlab.MergeRequest{IID: mrIID}, nil
+}
+func (m *mockClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) error {
+	return nil
+}
+func (m *mockClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, string, error) {
+	return nil, "", nil
+}
+func (m *mockClient) ListPipelines(ctx context.Context, projectID int, ref, status string) ([]*gitlab.Pipeline, error) {
+	return nil, nil
+}
+func (m *mockClient) CancelPipeline(ctx context.Context, projectID, pipelineID int) error {
+	return nil
+}
+func (m *mockClient) RetryPipeline(ctx context.Context, projectID, pipelineID int) (*gitlab.Pipeline, error) {
+	return &gitlab.Pipeline{ID: pipelineID}, nil
+}
+
+func TestLoggingClient_DelegatesAndLogs(t *testing.T) {
+	dir := t.TempDir()
+	fl, err := NewFileLogger(dir, "tok")
+	require.NoError(t, err)
+	defer fl.Close()
+
+	mock := &mockClient{}
+	lc := NewLoggingClient(mock, fl)
+
+	ctx := context.Background()
+	_, err = lc.GetCurrentUser(ctx)
+	require.NoError(t, err)
+	assert.True(t, mock.getCalled)
+
+	_, err = lc.RebaseMergeRequest(ctx, 123, 42)
+	require.NoError(t, err)
+	assert.True(t, mock.rebaseCalled)
+
+	fl.Close()
+
+	// Verify log file has API entries
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	data, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+	require.NoError(t, err)
+
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	require.Len(t, lines, 2)
+
+	var entry1 map[string]any
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &entry1))
+	assert.Equal(t, "GetCurrentUser", entry1["msg"])
+
+	var entry2 map[string]any
+	require.NoError(t, json.Unmarshal([]byte(lines[1]), &entry2))
+	assert.Equal(t, "RebaseMergeRequest", entry2["msg"])
+	api := entry2["api"].(map[string]any)
+	args := api["args"].(map[string]any)
+	assert.Equal(t, float64(123), args["project_id"])
+	assert.Equal(t, float64(42), args["mr_iid"])
+}
