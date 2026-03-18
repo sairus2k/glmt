@@ -120,15 +120,8 @@ func runNonInteractive(host, token string, projectID int, mrsFlag string) error 
 		}
 	}
 
-	// Load config for behavior settings
-	cfgPath := configPath()
-	cfg, cfgErr := config.Load(cfgPath)
-
 	// Run the train
 	runner := train.NewRunner(client, projectID, logger)
-	if cfgErr == nil {
-		runner.SkipCI = cfg.Behavior.SkipCI
-	}
 	result, err := runner.Run(ctx, mrs)
 	if err != nil {
 		return fmt.Errorf("running train: %w", err)

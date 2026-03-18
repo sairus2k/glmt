@@ -449,7 +449,6 @@ func (m *AppModel) startTrain(mrs []*gitlab.MergeRequest) tea.Cmd {
 		})
 		runner.PollPipelineInterval = 10 * time.Second
 		runner.PollRebaseInterval = 2 * time.Second
-		runner.SkipCI = m.cfg.Behavior.SkipCI
 
 		result, _ := runner.Run(ctx, mrs)
 		close(ch)

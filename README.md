@@ -47,8 +47,8 @@ glmt
    passed, no conflicts, discussions resolved) can be toggled for merging.
    Ineligible MRs are shown grayed out with a reason. Reorder with
    `Shift+Up/Down`.
-3. **Press Enter** -- the merge train runs. Each MR is rebased, its pipeline is
-   awaited, and it is merged. Progress is shown live.
+3. **Press Enter** -- the merge train runs. Each MR is rebased and merged
+   directly. Progress is shown live.
 
 ## Configuration
 
@@ -59,7 +59,6 @@ glmt
 repo = "myteam/myrepo"          # last-used project path
 
 [behavior]
-skip_ci = true                  # skip the branch pipeline after rebase (useful with merge trains)
 poll_rebase_interval_s = 2      # how often to check rebase status
 poll_pipeline_interval_s = 10   # how often to check pipeline status
 ```
@@ -69,12 +68,12 @@ poll_pipeline_interval_s = 10   # how often to check pipeline status
 For each selected MR, in order:
 
 1. **Rebase** onto the target branch. If there is a conflict, skip the MR.
-2. **Wait for the pipeline** to pass. If it fails, skip the MR.
-3. **Merge** with a SHA guard to ensure the branch has not moved. On SHA
+   The branch pipeline is skipped after rebase to avoid redundant CI.
+2. **Merge** with a SHA guard to ensure the branch has not moved. On SHA
    mismatch, retry the rebase once.
-4. **Cancel the main-branch pipeline** triggered by the merge (if more MRs
+3. **Cancel the main-branch pipeline** triggered by the merge (if more MRs
    remain) to avoid wasting CI on intermediate states.
-5. After the last MR, let the final main pipeline run and display its status.
+4. After the last MR, let the final main pipeline run and display its status.
    If the last MR was skipped but earlier MRs merged, restart the cancelled
    main pipeline so CI runs against the actual final state.
 
@@ -86,3 +85,7 @@ Skipped MRs do not abort the train. Already-merged MRs are never rolled back.
 - [glab CLI](https://gitlab.com/gitlab-org/cli) configured, or a GitLab
   personal access token with `api` scope
 - Self-hosted GitLab (any tier) or gitlab.com
+- If your project requires pipelines to succeed before merging, enable
+  **"Skipped pipelines are considered successful"** in Settings > Merge
+  requests (GitLab 17.6+). glmt always skips the branch pipeline after
+  rebase to avoid redundant CI.

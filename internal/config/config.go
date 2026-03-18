@@ -28,9 +28,8 @@ type DefaultsConfig struct {
 
 // BehaviorConfig holds behavioral settings.
 type BehaviorConfig struct {
-	SkipCI                bool `toml:"skip_ci"`
-	PollRebaseIntervalS   int  `toml:"poll_rebase_interval_s"`
-	PollPipelineIntervalS int  `toml:"poll_pipeline_interval_s"`
+	PollRebaseIntervalS   int `toml:"poll_rebase_interval_s"`
+	PollPipelineIntervalS int `toml:"poll_pipeline_interval_s"`
 }
 
 // DefaultConfig returns the config with sensible defaults.

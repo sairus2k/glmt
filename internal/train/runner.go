@@ -44,8 +44,6 @@ type Runner struct {
 	client    gitlab.Client
 	projectID int
 	logger    Logger
-	// SkipCI prevents the branch pipeline from running after rebase.
-	SkipCI bool
 	// Configurable intervals for testing
 	PollRebaseInterval       time.Duration
 	PollPipelineInterval     time.Duration
@@ -158,7 +156,7 @@ func (r *Runner) processMR(ctx context.Context, mr *gitlab.MergeRequest, isLast 
 func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, isLast bool, lastCancelledPipelineID *int, isRetry bool) (MRStatus, string) {
 	// Step 1: REBASE
 	r.log(mr.IID, "rebase", "Rebasing merge request...")
-	rebasedMR, err := r.client.RebaseMergeRequest(ctx, r.projectID, mr.IID, r.SkipCI)
+	_, err := r.client.RebaseMergeRequest(ctx, r.projectID, mr.IID)
 	if err != nil {
 		if ctx.Err() != nil {
 			return MRStatusPending, ""
@@ -168,25 +166,8 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 	}
 	r.log(mr.IID, "rebase", "Rebase successful")
 
-	// Step 2: WAIT FOR PIPELINE (skip when skip_ci is enabled)
-	if r.SkipCI {
-		r.log(mr.IID, "pipeline_skip", "Skipping pipeline wait (skip_ci enabled)")
-	} else {
-		r.log(mr.IID, "pipeline_wait", "Waiting for pipeline...")
-		pipeline, err := r.waitForMRPipeline(ctx, mr.IID, rebasedMR.SHA)
-		if err != nil {
-			if ctx.Err() != nil {
-				return MRStatusPending, ""
-			}
-			r.log(mr.IID, "skip", fmt.Sprintf("Pipeline error: %v", err))
-			return MRStatusSkipped, fmt.Sprintf("pipeline error: %v", err)
-		}
-		if pipeline.Status != "success" {
-			r.log(mr.IID, "pipeline_failed", fmt.Sprintf("Pipeline %s", pipeline.Status))
-			return MRStatusSkipped, fmt.Sprintf("pipeline %s", pipeline.Status)
-		}
-		r.log(mr.IID, "pipeline_success", "Pipeline passed")
-	}
+	// Step 2: Branch pipeline is skipped after rebase to avoid redundant CI
+	r.log(mr.IID, "pipeline_skip", "Branch pipeline skipped after rebase")
 
 	// Step 3: MERGE (with SHA guard)
 	// Wait for GitLab to finish its internal merge status check
@@ -301,41 +282,6 @@ func (r *Runner) waitForMergeReady(ctx context.Context, mrIID int) (*gitlab.Merg
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-time.After(r.PollRebaseInterval):
-		}
-	}
-}
-
-func (r *Runner) waitForMRPipeline(ctx context.Context, mrIID int, expectedSHA string) (*gitlab.Pipeline, error) {
-	for {
-		pipeline, mergeStatus, err := r.client.GetMergeRequestPipeline(ctx, r.projectID, mrIID)
-		if err != nil {
-			return nil, err
-		}
-
-		if pipeline != nil {
-			switch pipeline.Status {
-			case "success":
-				if expectedSHA != "" && pipeline.SHA != expectedSHA {
-					break // stale pipeline (wrong SHA), keep polling
-				}
-				if mergeStatus == "ci_still_running" || mergeStatus == "checking" || mergeStatus == "unchecked" {
-					r.log(mrIID, "pipeline_wait", fmt.Sprintf("Pipeline shows success but merge status is '%s', keep polling...", mergeStatus))
-					break // stale pipeline — GitLab hasn't acknowledged the new pipeline yet
-				}
-				return pipeline, nil
-			case "failed", "canceled", "skipped":
-				if expectedSHA != "" && pipeline.SHA != expectedSHA {
-					break // stale pipeline, keep polling
-				}
-				return pipeline, nil
-			}
-		}
-
-		// Wait before polling again
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(r.PollPipelineInterval):
 		}
 	}
 }

@@ -146,6 +146,7 @@ func createProject(t *testing.T, gitlabURL, token string) int {
 		"visibility":                            "private",
 		"merge_method":                          "rebase_merge",
 		"only_allow_merge_if_pipeline_succeeds": true,
+		"allow_merge_on_skipped_pipeline":       true,
 	}
 	body, _ := json.Marshal(data)
 

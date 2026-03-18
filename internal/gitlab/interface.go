@@ -70,8 +70,8 @@ type Client interface {
 	// RebaseMergeRequest triggers a rebase of the MR onto its target branch.
 	// Returns the updated MR (with post-rebase SHA) on success.
 	// Returns an error if a rebase conflict occurs.
-	// When skipCI is true, the branch pipeline after rebase is skipped.
-	RebaseMergeRequest(ctx context.Context, projectID, mrIID int, skipCI bool) (*MergeRequest, error)
+	// The branch pipeline after rebase is always skipped.
+	RebaseMergeRequest(ctx context.Context, projectID, mrIID int) (*MergeRequest, error)
 
 	// MergeMergeRequest merges the MR with a SHA guard.
 	// sha is the expected head SHA — the server returns 409 if it doesn't match.
