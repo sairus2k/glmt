@@ -76,12 +76,10 @@ func classifyMR(mr *gitlab.MergeRequest) (eligible bool, reason string) {
 		return false, "pipeline failed"
 	}
 	switch mr.DetailedMergeStatus {
-	case "mergeable", "need_rebase":
-		// mergeable: ready; need_rebase: train handles rebase
+	case "mergeable", "need_rebase", "not_approved":
+		// mergeable: ready; need_rebase: train handles rebase; not_approved: GitLab Free can't enforce approvals
 	case "discussions_not_resolved":
 		return false, "unresolved threads"
-	case "not_approved":
-		return false, "not approved"
 	case "blocked_status":
 		return false, "blocked"
 	case "requested_changes":
@@ -95,6 +93,24 @@ func classifyMR(mr *gitlab.MergeRequest) (eligible bool, reason string) {
 		return false, "unresolved threads"
 	}
 	return true, ""
+}
+
+// ineligibleIcon returns a category-specific icon for an ineligible MR reason.
+func ineligibleIcon(reason string, spinnerFrame int) string {
+	switch reason {
+	case "pipeline failed", "blocked":
+		return sError.Styled("\u2717")
+	case "pipeline running", "checking", "unchecked":
+		return sRunning.Styled(string(spinnerFrames[spinnerFrame]))
+	case "draft":
+		return sFaint.Styled("\u270E")
+	case "unresolved threads":
+		return sWarning.Styled("\u25C7")
+	case "requested changes":
+		return sWarning.Styled("\u21BB")
+	default:
+		return sError.Styled("\u2717")
+	}
 }
 
 // totalCount returns the total number of MRs (eligible + ineligible).
@@ -391,7 +407,6 @@ type tableLayout struct {
 	maxAuthor    int
 	maxCommits   int
 	maxApprovals int
-	maxBadge     int
 	titleWidth   int
 }
 
@@ -414,11 +429,6 @@ func (m MRListModel) computeLayout() tableLayout {
 		if mr.ApprovalCount > 0 {
 			l.maxApprovals = max(l.maxApprovals, ansi.StringWidth(fmt.Sprintf("✓ %d", mr.ApprovalCount)))
 		}
-		badgeText := fmt.Sprintf("[%s]", imr.Reason)
-		if imr.Reason == "checking" || imr.Reason == "unchecked" || imr.Reason == "pipeline running" {
-			badgeText = fmt.Sprintf("[⠋ %s]", imr.Reason)
-		}
-		l.maxBadge = max(l.maxBadge, ansi.StringWidth(badgeText))
 	}
 
 	const prefixWidth = 4 // "> ● " or "  ○ " or "  ✗ "
@@ -426,9 +436,6 @@ func (m MRListModel) computeLayout() tableLayout {
 	fixed := prefixWidth + l.maxIID + colGap + colGap + l.maxAuthor + colGap + l.maxCommits
 	if l.maxApprovals > 0 {
 		fixed += colGap + l.maxApprovals
-	}
-	if l.maxBadge > 0 {
-		fixed += colGap + l.maxBadge
 	}
 
 	if m.width > 0 {
@@ -590,11 +597,6 @@ func (m MRListModel) View() tea.View {
 				lb.WriteString(strings.Repeat(" ", lay.maxApprovals))
 			}
 		}
-		if lay.maxBadge > 0 {
-			lb.WriteString("  ")
-			lb.WriteString(strings.Repeat(" ", lay.maxBadge))
-		}
-
 		lineCount := 1
 		if second != "" {
 			second = truncateText(second, lay.titleWidth)
@@ -620,7 +622,7 @@ func (m MRListModel) View() tea.View {
 			lb.WriteString(" ")
 		}
 		lb.WriteString(" ")
-		lb.WriteString(sError.Styled("\u2717"))
+		lb.WriteString(ineligibleIcon(imr.Reason, m.spinnerFrame))
 		lb.WriteString(" ")
 		lb.WriteString(padLeft(sDim.Styled(fmt.Sprintf("!%d", imr.MR.IID)), lay.maxIID))
 		lb.WriteString("  ")
@@ -641,17 +643,6 @@ func (m MRListModel) View() tea.View {
 				lb.WriteString(strings.Repeat(" ", lay.maxApprovals))
 			}
 		}
-		if lay.maxBadge > 0 {
-			lb.WriteString("  ")
-			var badge string
-			if imr.Reason == "checking" || imr.Reason == "unchecked" || imr.Reason == "pipeline running" {
-				badge = fmt.Sprintf("[%s %s]", spinnerFrames[m.spinnerFrame], imr.Reason)
-			} else {
-				badge = fmt.Sprintf("[%s]", imr.Reason)
-			}
-			lb.WriteString(padLeft(sWarning.Styled(badge), lay.maxBadge))
-		}
-
 		lineCount := 1
 		if second != "" {
 			second = truncateText(second, lay.titleWidth)

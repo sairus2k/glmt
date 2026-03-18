@@ -71,13 +71,19 @@ var (
 		BlockingDiscussionsResolved: true, CreatedAt: "2025-01-14T00:00:00Z",
 		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/61",
 	}
+	notApprovedMR = &gitlab.MergeRequest{
+		IID: 62, Title: "Add feature flag", Author: "lisa",
+		HeadPipelineStatus: "success", DetailedMergeStatus: "not_approved",
+		BlockingDiscussionsResolved: true, CreatedAt: "2025-01-15T00:00:00Z",
+		WebURL: "https://gitlab.com/myteam/myrepo/-/merge_requests/62",
+	}
 )
 
 // allFixtureMRs returns a fresh slice of all test fixtures.
 func allFixtureMRs() []*gitlab.MergeRequest {
 	return []*gitlab.MergeRequest{
 		eligibleMR1, eligibleMR2, draftMR, runningMR, conflictMR, unresolvedMR,
-		unresolvedStatusMR, needRebaseMR,
+		unresolvedStatusMR, needRebaseMR, notApprovedMR,
 	}
 }
 
@@ -124,13 +130,14 @@ func sendKeyCmd(m MRListModel, key string) (MRListModel, tea.Cmd) {
 func TestMRList_Classification(t *testing.T) {
 	m := loadModel(allFixtureMRs())
 
-	assert.Len(t, m.Eligible(), 3)
+	assert.Len(t, m.Eligible(), 4)
 	assert.Len(t, m.Ineligible(), 5)
 
 	// Check eligible MRs are the right ones (sorted by CreatedAt asc).
 	assert.Equal(t, 42, m.Eligible()[0].IID)
 	assert.Equal(t, 38, m.Eligible()[1].IID)
 	assert.Equal(t, 46, m.Eligible()[2].IID) // need_rebase is eligible
+	assert.Equal(t, 62, m.Eligible()[3].IID) // not_approved is eligible
 
 	// Check ineligible reasons.
 	reasons := make(map[int]string)
@@ -199,8 +206,8 @@ func TestMRList_SelectAll(t *testing.T) {
 	m := loadModel(allFixtureMRs())
 
 	m = sendKey(m, "a")
-	assert.Equal(t, 3, m.SelectedCount())
-	assert.Equal(t, []int{38, 42, 46}, m.Selected())
+	assert.Equal(t, 4, m.SelectedCount())
+	assert.Equal(t, []int{38, 42, 46, 62}, m.Selected())
 }
 
 func TestMRList_DeselectAll(t *testing.T) {
@@ -208,7 +215,7 @@ func TestMRList_DeselectAll(t *testing.T) {
 
 	// Select all, then deselect all.
 	m = sendKey(m, "a")
-	assert.Equal(t, 3, m.SelectedCount())
+	assert.Equal(t, 4, m.SelectedCount())
 
 	m = sendKey(m, "A")
 	assert.Equal(t, 0, m.SelectedCount())
@@ -218,11 +225,12 @@ func TestMRList_DeselectAll(t *testing.T) {
 func TestMRList_CannotSelectIneligible(t *testing.T) {
 	m := loadModel(allFixtureMRs())
 
-	// Move cursor to ineligible section (past 3 eligible MRs).
+	// Move cursor to ineligible section (past 4 eligible MRs).
 	m = sendKey(m, "down")
 	m = sendKey(m, "down")
 	m = sendKey(m, "down")
-	assert.Equal(t, 3, m.Cursor()) // First ineligible index.
+	m = sendKey(m, "down")
+	assert.Equal(t, 4, m.Cursor()) // First ineligible index.
 
 	// Try to toggle selection — should do nothing.
 	m = sendKey(m, " ")
@@ -305,16 +313,16 @@ func TestMRList_ChangeRepo(t *testing.T) {
 	assert.True(t, ok)
 }
 
-func TestMRList_ViewShowsBadges(t *testing.T) {
+func TestMRList_ViewShowsStatusIcons(t *testing.T) {
 	m := loadModel(allFixtureMRs())
 
 	view := m.View()
 	viewStr := view.Content
 
-	assert.Contains(t, viewStr, "[draft]")
-	assert.Contains(t, viewStr, spinnerFrames[0]+" pipeline running]")
-	assert.Contains(t, viewStr, "[broken_status]")
-	assert.Contains(t, viewStr, "[unresolved threads]")
+	assert.Contains(t, viewStr, "\u270E")         // draft icon
+	assert.Contains(t, viewStr, "\u25C7")         // unresolved threads icon
+	assert.Contains(t, viewStr, "\u2717")         // failed/unknown icon
+	assert.Contains(t, viewStr, spinnerFrames[0]) // running pipeline spinner
 }
 
 func TestMRList_CurrentMRURL(t *testing.T) {
@@ -330,6 +338,10 @@ func TestMRList_CurrentMRURL(t *testing.T) {
 	// Move to third eligible MR (need_rebase).
 	m = sendKey(m, "j")
 	assert.Equal(t, needRebaseMR.WebURL, m.currentMRURL())
+
+	// Move to fourth eligible MR (not_approved).
+	m = sendKey(m, "j")
+	assert.Equal(t, notApprovedMR.WebURL, m.currentMRURL())
 
 	// Move into ineligible section (first ineligible is draftMR after sorting).
 	m = sendKey(m, "j")
@@ -357,7 +369,7 @@ func TestMRList_ViewShowsSelectionCount(t *testing.T) {
 	view := m.View()
 	viewStr := view.Content
 
-	assert.Contains(t, viewStr, "3 selected")
+	assert.Contains(t, viewStr, "4 selected")
 }
 
 func TestMRList_UncheckedSetsRefreshing(t *testing.T) {
@@ -437,16 +449,15 @@ func TestMRList_SpinnerTicksWhenRefreshing(t *testing.T) {
 	assert.Equal(t, 1, m.spinnerFrame)
 }
 
-func TestMRList_ViewShowsSpinnerBadge(t *testing.T) {
+func TestMRList_ViewShowsSpinnerForUnchecked(t *testing.T) {
 	mrs := []*gitlab.MergeRequest{eligibleMR1, checkingMR, uncheckedMR}
 	m := loadModel(mrs)
 
 	view := m.View()
 	viewStr := view.Content
 
-	// The badge should contain the spinner frame character.
-	assert.Contains(t, viewStr, spinnerFrames[0]+" checking")
-	assert.Contains(t, viewStr, spinnerFrames[0]+" unchecked")
+	// The spinner icon should appear for checking/unchecked MRs.
+	assert.Contains(t, viewStr, spinnerFrames[0])
 }
 
 func TestMRList_RunningPipelineSetsRefreshing(t *testing.T) {
@@ -483,7 +494,7 @@ func TestMRList_ViewShowsSpinnerForRunningPipeline(t *testing.T) {
 	view := m.View()
 	viewStr := view.Content
 
-	assert.Contains(t, viewStr, spinnerFrames[0]+" pipeline running")
+	assert.Contains(t, viewStr, spinnerFrames[0])
 }
 
 func TestMRList_BackgroundUpdatePreservesSelectionWithRunningPipeline(t *testing.T) {
@@ -524,4 +535,27 @@ func TestMRList_ViewShowsRefreshingIndicator(t *testing.T) {
 	// The MR list should still be visible.
 	assert.Contains(t, viewStr, eligibleMR1.Title)
 	assert.Contains(t, viewStr, eligibleMR2.Title)
+}
+
+func TestIneligibleIcon(t *testing.T) {
+	tests := []struct {
+		reason   string
+		wantChar string
+	}{
+		{"pipeline failed", "\u2717"},
+		{"blocked", "\u2717"},
+		{"pipeline running", spinnerFrames[0]},
+		{"checking", spinnerFrames[0]},
+		{"unchecked", spinnerFrames[0]},
+		{"draft", "\u270E"},
+		{"unresolved threads", "\u25C7"},
+		{"requested changes", "\u21BB"},
+		{"some_unknown_status", "\u2717"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.reason, func(t *testing.T) {
+			icon := ineligibleIcon(tt.reason, 0)
+			assert.Contains(t, icon, tt.wantChar)
+		})
+	}
 }

@@ -266,7 +266,7 @@ func (r *Runner) waitForMergeReady(ctx context.Context, mrIID int) (*gitlab.Merg
 		}
 
 		switch mr.DetailedMergeStatus {
-		case "mergeable":
+		case "mergeable", "not_approved":
 			return mr, nil
 		case "checking", "unchecked":
 			staleRetries = 0 // reset — GitLab is actively recalculating
