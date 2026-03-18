@@ -42,16 +42,19 @@ type AppModel struct {
 	cfgPath   string
 	projectID int
 
-	width    int
-	height   int
-	userName string
+	width       int
+	height      int
+	userName    string
+	runtimeHost string // effective host for display (may differ from cfg)
 
 	trainCancel context.CancelFunc
 	trainStepCh chan trainStepMsg
 }
 
 // NewAppModel creates the app model, deciding which screen to start on.
-func NewAppModel(creds *auth.Credentials, cfg *config.Config, cfgPath string) AppModel {
+// overrideProjectID is a per-invocation override (e.g. from CLI flags) that
+// is used without being persisted to cfg.
+func NewAppModel(creds *auth.Credentials, cfg *config.Config, cfgPath string, overrideProjectID int) AppModel {
 	m := AppModel{
 		cfg:     cfg,
 		cfgPath: cfgPath,
@@ -77,11 +80,15 @@ func NewAppModel(creds *auth.Credentials, cfg *config.Config, cfgPath string) Ap
 		if err == nil {
 			m.client = c
 		}
-		m.cfg.GitLab.Host = creds.Host
+		m.runtimeHost = creds.Host
 
-		if cfg.Defaults.ProjectID != 0 {
+		projectID := cfg.Defaults.ProjectID
+		if overrideProjectID != 0 {
+			projectID = overrideProjectID
+		}
+		if projectID != 0 {
 			m.screen = ScreenMRList
-			m.projectID = cfg.Defaults.ProjectID
+			m.projectID = projectID
 			m.mrList = NewMRListModel(cfg.Defaults.Repo)
 		} else {
 			m.screen = ScreenRepoPicker
@@ -149,7 +156,10 @@ func (m *AppModel) propagateContentHeight() {
 }
 
 func (m AppModel) loginStatus() string {
-	host := m.cfg.GitLab.Host
+	host := m.runtimeHost
+	if host == "" {
+		host = m.cfg.GitLab.Host
+	}
 	if m.userName != "" && host != "" {
 		return m.userName + " @ " + host
 	}
@@ -239,6 +249,7 @@ func (m AppModel) updateSetup(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.client = c
 		m.cfg.GitLab.Host = m.setup.Host()
 		m.cfg.GitLab.Token = m.setup.Token()
+		m.runtimeHost = m.setup.Host()
 		m.userName = m.setup.UserName()
 		_ = config.Save(m.cfgPath, m.cfg)
 

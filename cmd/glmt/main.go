@@ -190,34 +190,36 @@ func runTUI(flagHost, flagToken string, flagProjectID int) error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Override config with CLI flags
+	// Compute effective values without mutating saved config
+	effectiveHost := cfg.GitLab.Host
+	effectiveToken := cfg.GitLab.Token
 	if flagHost != "" {
-		cfg.GitLab.Host = flagHost
+		effectiveHost = flagHost
 	}
 	if flagToken != "" {
-		cfg.GitLab.Token = flagToken
-	}
-	if flagProjectID != 0 {
-		cfg.Defaults.ProjectID = flagProjectID
+		effectiveToken = flagToken
 	}
 
 	// Try to read existing credentials: glab config first, then glmt config
 	var creds *auth.Credentials
 	glabDir := auth.DefaultConfigDir()
-	host := cfg.GitLab.Host
-	c, err := auth.ReadCredentials(glabDir, host)
+	c, err := auth.ReadCredentials(glabDir, effectiveHost)
 	if err == nil {
 		creds = c
-	} else if cfg.GitLab.Host != "" && cfg.GitLab.Token != "" {
+		// Persist glab-discovered host only (not CLI-provided host)
+		if flagHost == "" {
+			cfg.GitLab.Host = creds.Host
+		}
+	} else if effectiveHost != "" && effectiveToken != "" {
 		creds = &auth.Credentials{
-			Host:     cfg.GitLab.Host,
-			Token:    cfg.GitLab.Token,
+			Host:     effectiveHost,
+			Token:    effectiveToken,
 			Protocol: "https",
 		}
 	}
 
 	// Start TUI
-	model := tui.NewAppModel(creds, cfg, cfgPath)
+	model := tui.NewAppModel(creds, cfg, cfgPath, flagProjectID)
 	p := tea.NewProgram(model)
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("running TUI: %w", err)
