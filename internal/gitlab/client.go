@@ -150,8 +150,13 @@ func (c *APIClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int,
 	_, _, err := c.client.MergeRequests.AcceptMergeRequest(int64(projectID), int64(mrIID), opts, goGitLab.WithContext(ctx))
 	if err != nil {
 		var errResp *goGitLab.ErrorResponse
-		if errors.As(err, &errResp) && errResp.Response != nil && errResp.Response.StatusCode == 409 {
-			return fmt.Errorf("merging MR %d: %w", mrIID, ErrSHAMismatch)
+		if errors.As(err, &errResp) && errResp.Response != nil {
+			if errResp.Response.StatusCode == 409 {
+				return fmt.Errorf("merging MR %d: %w", mrIID, ErrSHAMismatch)
+			}
+			if errResp.Response.StatusCode == 405 {
+				return fmt.Errorf("merging MR %d: %w", mrIID, ErrNotMergeable)
+			}
 		}
 		return fmt.Errorf("merging MR %d: %w", mrIID, err)
 	}

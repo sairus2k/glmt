@@ -197,8 +197,41 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 			r.log(mr.IID, "merge_sha_mismatch", "SHA mismatch, retrying from rebase...")
 			return r.processMRAttempt(ctx, mr, isLast, lastCancelledPipelineID, true)
 		}
-		r.log(mr.IID, "skip", fmt.Sprintf("Merge failed: %v", mergeErr))
-		return MRStatusSkipped, fmt.Sprintf("merge failed: %v", mergeErr)
+		if errors.Is(mergeErr, gitlab.ErrNotMergeable) {
+			// 405 race condition: GitLab said "mergeable" but merge API isn't ready.
+			// Retry waitForMergeReady + merge, up to MaxMergeStatusRetries times.
+			for attempt := 1; attempt <= r.MaxMergeStatusRetries; attempt++ {
+				r.log(mr.IID, "merge", fmt.Sprintf("Got 405, retrying after merge readiness check (%d/%d)...", attempt, r.MaxMergeStatusRetries))
+				currentMR, err = r.waitForMergeReady(ctx, mr.IID)
+				if err != nil {
+					if ctx.Err() != nil {
+						return MRStatusPending, ""
+					}
+					r.log(mr.IID, "skip", fmt.Sprintf("Not mergeable on 405 retry: %v", err))
+					return MRStatusSkipped, fmt.Sprintf("not mergeable on 405 retry: %v", err)
+				}
+				mergeErr = r.client.MergeMergeRequest(ctx, r.projectID, mr.IID, currentMR.SHA)
+				if mergeErr == nil {
+					break
+				}
+				if ctx.Err() != nil {
+					return MRStatusPending, ""
+				}
+				if !errors.Is(mergeErr, gitlab.ErrNotMergeable) {
+					// Different error — fall through to skip
+					r.log(mr.IID, "skip", fmt.Sprintf("Merge failed on 405 retry: %v", mergeErr))
+					return MRStatusSkipped, fmt.Sprintf("merge failed: %v", mergeErr)
+				}
+			}
+			if mergeErr != nil {
+				r.log(mr.IID, "skip", "Merge 405 retries exhausted, skipping")
+				return MRStatusSkipped, "merge 405 retries exhausted"
+			}
+			// merge succeeded in retry loop — fall through to success path
+		} else {
+			r.log(mr.IID, "skip", fmt.Sprintf("Merge failed: %v", mergeErr))
+			return MRStatusSkipped, fmt.Sprintf("merge failed: %v", mergeErr)
+		}
 	}
 	r.log(mr.IID, "merge", "Merged successfully")
 

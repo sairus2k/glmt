@@ -172,6 +172,19 @@ func TestMergeMergeRequest_SHAMismatch(t *testing.T) {
 	assert.ErrorIs(t, err, ErrSHAMismatch)
 }
 
+func TestMergeMergeRequest_NotMergeable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = fmt.Fprint(w, `{"message": "Method Not Allowed"}`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	err := client.MergeMergeRequest(context.Background(), 1, 10, "abc123")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrNotMergeable)
+}
+
 func TestGetMergeRequestPipeline(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)

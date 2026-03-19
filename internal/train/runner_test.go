@@ -361,7 +361,7 @@ func TestRunnerRun(t *testing.T) {
 					}, nil
 				}
 				m.MergeMergeRequestFn = func(_ context.Context, _ int, _ int, _ string) error {
-					return fmt.Errorf("405 not mergeable")
+					return fmt.Errorf("500 internal server error")
 				}
 			},
 			assertResult: func(t *testing.T, result *Result) {
@@ -375,6 +375,83 @@ func TestRunnerRun(t *testing.T) {
 				// No retry
 				rebaseCalls := m.CallsTo("RebaseMergeRequest")
 				assert.Len(t, rebaseCalls, 1, "should not retry rebase for non-SHA error")
+			},
+		},
+		{
+			name: "merge 405 - retried and succeeds",
+			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
+			setup: func(m *MockClient) {
+				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					return &gitlab.MergeRequest{
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
+						DetailedMergeStatus: "mergeable",
+					}, nil
+				}
+				mergeCallCount := 0
+				m.MergeMergeRequestFn = func(_ context.Context, _ int, _ int, _ string) error {
+					mergeCallCount++
+					if mergeCallCount == 1 {
+						return fmt.Errorf("merging MR 1: %w", gitlab.ErrNotMergeable)
+					}
+					return nil
+				}
+				listEmptyCount := 0
+				m.ListPipelinesFn = func(_ context.Context, _ int, ref, status string) ([]*gitlab.Pipeline, error) {
+					if ref == "main" && status == "" {
+						listEmptyCount++
+						if listEmptyCount == 1 {
+							return []*gitlab.Pipeline{
+								{ID: 50, Status: "success", Ref: "main"},
+							}, nil
+						}
+						return []*gitlab.Pipeline{
+							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
+						}, nil
+					}
+					return nil, nil
+				}
+			},
+			assertResult: func(t *testing.T, result *Result) {
+				require.Len(t, result.MRResults, 1)
+				assert.Equal(t, MRStatusMerged, result.MRResults[0].Status)
+				assert.Empty(t, result.MRResults[0].SkipReason)
+			},
+			assertCalls: func(t *testing.T, m *MockClient) {
+				mergeCalls := m.CallsTo("MergeMergeRequest")
+				assert.Len(t, mergeCalls, 2, "should try merge twice (first 405, then success)")
+				rebaseCalls := m.CallsTo("RebaseMergeRequest")
+				assert.Len(t, rebaseCalls, 1, "should not re-rebase on 405")
+			},
+		},
+		{
+			name: "merge 405 - exhausted retries, skipped",
+			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
+			setup: func(m *MockClient) {
+				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					return &gitlab.MergeRequest{
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
+						DetailedMergeStatus: "mergeable",
+					}, nil
+				}
+				m.MergeMergeRequestFn = func(_ context.Context, _ int, _ int, _ string) error {
+					return fmt.Errorf("merging MR 1: %w", gitlab.ErrNotMergeable)
+				}
+			},
+			assertResult: func(t *testing.T, result *Result) {
+				require.Len(t, result.MRResults, 1)
+				assert.Equal(t, MRStatusSkipped, result.MRResults[0].Status)
+				assert.Contains(t, result.MRResults[0].SkipReason, "405 retries exhausted")
+			},
+			assertCalls: func(t *testing.T, m *MockClient) {
+				mergeCalls := m.CallsTo("MergeMergeRequest")
+				// 1 initial + MaxMergeStatusRetries (5) retries = 6
+				assert.Len(t, mergeCalls, 6, "should exhaust all merge retries")
+				rebaseCalls := m.CallsTo("RebaseMergeRequest")
+				assert.Len(t, rebaseCalls, 1, "should not re-rebase on 405")
 			},
 		},
 		{

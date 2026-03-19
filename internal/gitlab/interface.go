@@ -8,6 +8,10 @@ import (
 // ErrSHAMismatch is returned when a merge fails due to SHA mismatch (HTTP 409).
 var ErrSHAMismatch = errors.New("SHA mismatch")
 
+// ErrNotMergeable is returned when a merge fails due to HTTP 405 (Method Not Allowed).
+// This is a transient race condition: GitLab reports "mergeable" but the merge API isn't ready yet.
+var ErrNotMergeable = errors.New("not mergeable")
+
 // MergeRequest represents a GitLab merge request with fields needed for train execution.
 type MergeRequest struct {
 	IID                         int
