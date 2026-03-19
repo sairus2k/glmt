@@ -165,9 +165,7 @@ func (m MRListModel) handleMRsLoaded(msg mrsLoadedMsg) MRListModel {
 		m.eligible = mrs.eligible
 		m.ineligible = mrs.ineligible
 		m.refreshing = m.needsAutoRefresh()
-		if !m.refreshing {
-			m.userRefresh = false
-		}
+		m.userRefresh = false
 		return m
 	}
 
@@ -199,9 +197,7 @@ func (m MRListModel) handleMRsLoaded(msg mrsLoadedMsg) MRListModel {
 	}
 
 	m.refreshing = m.needsAutoRefresh()
-	if !m.refreshing {
-		m.userRefresh = false
-	}
+	m.userRefresh = false
 	return m
 }
 
