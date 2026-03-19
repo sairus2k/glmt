@@ -155,7 +155,7 @@ func (r *Runner) processMR(ctx context.Context, mr *gitlab.MergeRequest, isLast 
 
 func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, isLast bool, lastCancelledPipelineID *int, isRetry bool) (MRStatus, string) {
 	// Step 1: REBASE
-	r.log(mr.IID, "rebase", "Rebasing merge request...")
+	r.log(mr.IID, "rebase_wait", "Rebasing merge request...")
 	_, err := r.client.RebaseMergeRequest(ctx, r.projectID, mr.IID)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -171,7 +171,7 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 
 	// Step 3: MERGE (with SHA guard)
 	// Wait for GitLab to finish its internal merge status check
-	r.log(mr.IID, "merge", "Waiting for merge readiness...")
+	r.log(mr.IID, "merge_wait", "Waiting for merge readiness...")
 	currentMR, err := r.waitForMergeReady(ctx, mr.IID)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -237,7 +237,7 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 
 	// Step 4: CANCEL MAIN PIPELINE (if more MRs remain)
 	if !isLast {
-		r.log(mr.IID, "cancel_main_pipeline", "Cancelling main pipeline...")
+		r.log(mr.IID, "cancel_main_pipeline_wait", "Cancelling main pipeline...")
 		var pipeline *gitlab.Pipeline
 		var err error
 
@@ -247,7 +247,7 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 		}
 
 		for attempt := 0; pipeline == nil && err == nil && attempt < r.MaxCancelPipelineRetries; attempt++ {
-			r.log(mr.IID, "cancel_main_pipeline", fmt.Sprintf("No main pipeline found, retrying (%d/%d)...", attempt+1, r.MaxCancelPipelineRetries))
+			r.log(mr.IID, "cancel_main_pipeline_wait", fmt.Sprintf("No main pipeline found, retrying (%d/%d)...", attempt+1, r.MaxCancelPipelineRetries))
 			select {
 			case <-ctx.Done():
 			case <-time.After(r.PollPipelineInterval):

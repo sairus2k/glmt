@@ -59,7 +59,7 @@ func TestFileLogger_WritesJSONLines(t *testing.T) {
 
 	fl.LogSession()
 	fl.LogMeta(123, []int{42, 38})
-	fl.LogStep(42, "rebase", "Rebasing merge request...")
+	fl.LogStep(42, "rebase_wait", "Rebasing merge request...")
 	fl.LogStep(42, "merge", "Merging with SHA guard (sha=secret-tok)...")
 	fl.LogRunEnd(1, 1, 0, "success", 5*time.Minute)
 	fl.Close()
@@ -93,7 +93,7 @@ func TestFileLogger_WritesJSONLines(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(lines[2]), &step))
 	assert.Equal(t, "info", step["level"])
 	assert.Equal(t, float64(42), step["mr"])
-	assert.Equal(t, "rebase", step["step"])
+	assert.Equal(t, "rebase_wait", step["step"])
 
 	// Token scrubbed in step
 	var step2 map[string]any

@@ -57,25 +57,28 @@ func TestTrainRun_InitialState(t *testing.T) {
 func TestTrainRun_StepUpdate(t *testing.T) {
 	m := newTestTrainModel()
 
-	msg := trainStepMsg{mrIID: 42, step: "rebase", message: "Rebase successful"}
+	msg := trainStepMsg{mrIID: 42, step: "rebase_wait", message: "Rebasing merge request..."}
 	result, _ := m.Update(msg)
 	m = result.(TrainRunModel)
 
 	require.Len(t, m.MRSteps()[0].Steps, 1)
 	step := m.MRSteps()[0].Steps[0]
 	assert.Equal(t, "Rebase onto main", step.Name)
-	assert.Equal(t, StepDone, step.Status)
-	assert.Equal(t, "Rebase successful", step.Message)
+	assert.Equal(t, StepRunning, step.Status)
+	assert.Equal(t, "Rebasing merge request...", step.Message)
 }
 
 func TestTrainRun_MultipleSteps(t *testing.T) {
 	m := newTestTrainModel()
 
 	steps := []trainStepMsg{
+		{mrIID: 42, step: "rebase_wait", message: "Rebasing merge request..."},
 		{mrIID: 42, step: "rebase", message: "Rebase successful"},
 		{mrIID: 42, step: "pipeline_wait", message: "Waiting for pipeline..."},
 		{mrIID: 42, step: "pipeline_success", message: "Pipeline passed"},
+		{mrIID: 42, step: "merge_wait", message: "Waiting for merge readiness..."},
 		{mrIID: 42, step: "merge", message: "sha: a1b2c3"},
+		{mrIID: 42, step: "cancel_main_pipeline_wait", message: "Cancelling main pipeline..."},
 		{mrIID: 42, step: "cancel_main_pipeline", message: "next MR pending"},
 	}
 
@@ -84,17 +87,22 @@ func TestTrainRun_MultipleSteps(t *testing.T) {
 		m = result.(TrainRunModel)
 	}
 
-	require.Len(t, m.MRSteps()[0].Steps, 5)
+	// rebase_wait + rebase dedup into 1 entry, so 7 unique display entries
+	require.Len(t, m.MRSteps()[0].Steps, 7)
 	assert.Equal(t, "Rebase onto main", m.MRSteps()[0].Steps[0].Name)
 	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[0].Status)
 	assert.Equal(t, "Pipeline running", m.MRSteps()[0].Steps[1].Name)
 	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[1].Status)
 	assert.Equal(t, "Pipeline passed", m.MRSteps()[0].Steps[2].Name)
 	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[2].Status)
-	assert.Equal(t, "Merged", m.MRSteps()[0].Steps[3].Name)
+	assert.Equal(t, "Checking merge status", m.MRSteps()[0].Steps[3].Name)
 	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[3].Status)
-	assert.Equal(t, "Main pipeline cancelled", m.MRSteps()[0].Steps[4].Name)
+	assert.Equal(t, "Merged", m.MRSteps()[0].Steps[4].Name)
 	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[4].Status)
+	assert.Equal(t, "Waiting for main pipeline", m.MRSteps()[0].Steps[5].Name)
+	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[5].Status)
+	assert.Equal(t, "Main pipeline cancelled", m.MRSteps()[0].Steps[6].Name)
+	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[6].Status)
 
 	// MR 2 and 3 should still be empty.
 	assert.Empty(t, m.MRSteps()[1].Steps)
@@ -106,7 +114,9 @@ func TestTrainRun_SecondMR(t *testing.T) {
 
 	// Process first MR.
 	steps := []trainStepMsg{
+		{mrIID: 42, step: "rebase_wait", message: "Rebasing merge request..."},
 		{mrIID: 42, step: "rebase", message: "Rebase successful"},
+		{mrIID: 42, step: "merge_wait", message: "Waiting for merge readiness..."},
 		{mrIID: 42, step: "merge", message: "sha: a1b2c3"},
 	}
 	for _, msg := range steps {
@@ -225,15 +235,15 @@ func TestTrainRun_ViewShowsProgress(t *testing.T) {
 func TestTrainRun_DeduplicateConsecutiveSameStep(t *testing.T) {
 	m := newTestTrainModel()
 
-	// Send two messages with the same step and MR IID
-	result, _ := m.Update(trainStepMsg{mrIID: 42, step: "rebase", message: "Rebasing..."})
+	// rebase_wait and rebase share the same display name — should dedup
+	result, _ := m.Update(trainStepMsg{mrIID: 42, step: "rebase_wait", message: "Rebasing merge request..."})
 	m = result.(TrainRunModel)
 
 	result, _ = m.Update(trainStepMsg{mrIID: 42, step: "rebase", message: "Rebase successful"})
 	m = result.(TrainRunModel)
 
-	// Should have only one entry with the updated message
-	require.Len(t, m.LogEntries(), 1, "duplicate step should update in place, not append")
+	// Should have only one entry with the updated message (dedup by display name)
+	require.Len(t, m.LogEntries(), 1, "rebase_wait + rebase should dedup into one entry")
 	assert.Equal(t, "Rebase successful", m.LogEntries()[0].Message)
 	assert.Equal(t, "Rebase onto main", m.LogEntries()[0].Name)
 

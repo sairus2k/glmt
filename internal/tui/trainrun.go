@@ -212,7 +212,7 @@ func (m TrainRunModel) handleStep(msg trainStepMsg) (tea.Model, tea.Cmd) {
 // mapStepName converts internal step identifiers to display names.
 func mapStepName(step, targetBranch, message string) string {
 	switch step {
-	case "rebase":
+	case "rebase", "rebase_wait":
 		return fmt.Sprintf("Rebase onto %s", targetBranch)
 	case "pipeline_wait":
 		return "Pipeline running"
@@ -224,12 +224,16 @@ func mapStepName(step, targetBranch, message string) string {
 		return "Pipeline failed"
 	case "merge":
 		return "Merged"
+	case "merge_wait":
+		return "Checking merge status"
 	case "merge_sha_mismatch":
 		return "SHA mismatch — retrying"
 	case "skip":
 		return fmt.Sprintf("Skipped: %s", message)
 	case "cancel_main_pipeline":
 		return "Main pipeline cancelled"
+	case "cancel_main_pipeline_wait":
+		return "Waiting for main pipeline"
 	case "main_pipeline_wait":
 		return "Main pipeline running"
 	case "main_pipeline_done":
@@ -244,7 +248,7 @@ func mapStepName(step, targetBranch, message string) string {
 // mapStepStatus converts a step identifier to its status.
 func mapStepStatus(step string) StepStatus {
 	switch step {
-	case "pipeline_wait", "main_pipeline_wait":
+	case "pipeline_wait", "main_pipeline_wait", "rebase_wait", "merge_wait", "cancel_main_pipeline_wait":
 		return StepRunning
 	case "rebase", "pipeline_success", "pipeline_skip", "merge", "cancel_main_pipeline", "main_pipeline_done", "restart_pipeline":
 		return StepDone
