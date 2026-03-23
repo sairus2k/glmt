@@ -101,7 +101,7 @@ func ineligibleIcon(reason string, spinnerFrame int) string {
 	case "pipeline failed", "blocked":
 		return sError.Styled("\u2717")
 	case "pipeline running", "checking", "unchecked":
-		return sRunning.Styled(string(spinnerFrames[spinnerFrame]))
+		return sRunning.Styled(spinnerFrames[spinnerFrame])
 	case "draft":
 		return sFaint.Styled("\u270E")
 	case "unresolved threads":

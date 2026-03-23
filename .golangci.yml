@@ -1,0 +1,25 @@
+version: "2"
+
+run:
+  go: "1.26"
+  issues-exit-code: 1
+
+linters:
+  default: standard
+  enable:
+    - gocritic
+    - unconvert
+    - unparam
+    - errorlint
+    - revive
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+
+formatters:
+  enable:
+    - gofmt

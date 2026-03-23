@@ -381,7 +381,7 @@ func scheduleBackgroundRefetch() tea.Cmd {
 
 // scheduleBackgroundRefetchAfter returns a command that sends backgroundRefetchMsg after the given delay.
 func scheduleBackgroundRefetchAfter(d time.Duration) tea.Cmd {
-	return tea.Tick(d, func(t time.Time) tea.Msg {
+	return tea.Tick(d, func(_ time.Time) tea.Msg {
 		return backgroundRefetchMsg{}
 	})
 }

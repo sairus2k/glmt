@@ -157,15 +157,16 @@ func (m RepoPickerModel) View() tea.View {
 	}
 	b.WriteString("\n\n")
 
-	if len(m.projects) == 0 {
+	switch {
+	case len(m.projects) == 0:
 		b.WriteString("  ")
 		b.WriteString(sRunning.Styled(spinnerFrames[m.spinnerFrame] + " Loading projects..."))
 		b.WriteString("\n")
-	} else if len(m.filtered) == 0 {
+	case len(m.filtered) == 0:
 		b.WriteString("  ")
 		b.WriteString(sFaint.Styled("No matching projects."))
 		b.WriteString("\n")
-	} else {
+	default:
 		visible := m.visibleItems()
 		end := m.scrollOffset + visible
 		if end > len(m.filtered) {

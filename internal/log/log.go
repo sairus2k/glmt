@@ -54,7 +54,7 @@ func NewFileLogger(dir, token string) (*FileLogger, error) {
 // Close closes the log file.
 func (fl *FileLogger) Close() {
 	if fl.file != nil {
-		fl.file.Close()
+		_ = fl.file.Close()
 	}
 }
 
@@ -65,7 +65,7 @@ func (fl *FileLogger) write(entry map[string]any) {
 		return // best-effort
 	}
 	data = append(data, '\n')
-	fl.file.Write(data) // best-effort: ignore write errors
+	_, _ = fl.file.Write(data) // best-effort: ignore write errors
 }
 
 func scrubToken(s, token string) string {

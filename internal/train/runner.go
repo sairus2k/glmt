@@ -36,6 +36,7 @@ type Result struct {
 type Logger func(mrIID int, step string, message string)
 
 // ErrSHAMismatch is returned when a merge fails due to SHA mismatch (409).
+//
 // Deprecated: use gitlab.ErrSHAMismatch directly.
 var ErrSHAMismatch = gitlab.ErrSHAMismatch
 

@@ -162,7 +162,7 @@ func TestMergeMergeRequest_Success(t *testing.T) {
 }
 
 func TestMergeMergeRequest_SHAMismatch(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusConflict)
 		_, _ = fmt.Fprint(w, `{"message": "SHA does not match"}`)
 	}))
@@ -176,7 +176,7 @@ func TestMergeMergeRequest_SHAMismatch(t *testing.T) {
 }
 
 func TestMergeMergeRequest_NotMergeable(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		_, _ = fmt.Fprint(w, `{"message": "Method Not Allowed"}`)
 	}))
@@ -473,7 +473,7 @@ func TestListMergeRequestsFull_Pagination(t *testing.T) {
 }
 
 func TestListMergeRequestsFull_HTTPError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = fmt.Fprint(w, `{"errors": [{"message": "Something went wrong"}]}`)
 	}))

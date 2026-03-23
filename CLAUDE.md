@@ -13,8 +13,7 @@ GitLab Merge Train CLI — a local interactive TUI that merges a sequence of Git
 go build -o glmt ./cmd/glmt/
 
 # Lint (CI rejects failures)
-go vet ./...
-gofmt -l .
+golangci-lint run ./...
 
 # Unit tests
 go test ./...
@@ -56,7 +55,7 @@ go test -v -tags e2e -count=1 ./e2e/...
 
 ## Code Style
 
-- `gofmt` formatting is enforced by CI
+- `golangci-lint` v2 is used for linting (includes gofmt, govet, staticcheck, and others)
 - Minimal abstractions — avoid unnecessary indirection
 - Errors wrapped with context: `fmt.Errorf("doing thing: %w", err)`
 - All API methods accept `context.Context`

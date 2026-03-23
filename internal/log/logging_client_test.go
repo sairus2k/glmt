@@ -18,14 +18,14 @@ type mockClient struct {
 	rebaseCalled bool
 }
 
-func (m *mockClient) GetCurrentUser(ctx context.Context) (*gitlab.User, error) {
+func (m *mockClient) GetCurrentUser(_ context.Context) (*gitlab.User, error) {
 	m.getCalled = true
 	return &gitlab.User{ID: 1, Username: "test"}, nil
 }
-func (m *mockClient) ListProjects(ctx context.Context, search string) ([]*gitlab.Project, error) {
+func (m *mockClient) ListProjects(_ context.Context, _ string) ([]*gitlab.Project, error) {
 	return nil, nil
 }
-func (m *mockClient) ListMergeRequestsFull(ctx context.Context, projectPath string) ([]*gitlab.MergeRequest, error) {
+func (m *mockClient) ListMergeRequestsFull(_ context.Context, _ string) ([]*gitlab.MergeRequest, error) {
 	return nil, nil
 }
 func (m *mockClient) GetMergeRequest(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error) {

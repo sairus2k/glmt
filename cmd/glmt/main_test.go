@@ -60,7 +60,7 @@ func TestLogout_PrintsGlabNote_WhenCredsExist(t *testing.T) {
 
 	err := logout(cfgPath, glabDir)
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {
@@ -86,7 +86,7 @@ func TestLogout_NoGlabNote_WhenNoGlabCreds(t *testing.T) {
 
 	err := logout(cfgPath, filepath.Join(dir, "no-glab"))
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	if err != nil {

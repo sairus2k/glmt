@@ -271,15 +271,16 @@ func (m TrainRunModel) View() tea.View {
 
 	// Header
 	total := len(m.mrs)
-	if m.done {
+	switch {
+	case m.done:
 		b.WriteString("  ")
 		b.WriteString(sSuccess.Styled(fmt.Sprintf("✓ Finished processing %d MRs", total)))
 		b.WriteString("\n\n")
-	} else if m.aborted {
+	case m.aborted:
 		b.WriteString("  ")
 		b.WriteString(sError.Styled(fmt.Sprintf("✗ Aborted — processed %d of %d MRs", m.currentMR, total)))
 		b.WriteString("\n\n")
-	} else {
+	default:
 		spinner := spinnerFrames[m.spinnerFrame]
 		b.WriteString("  ")
 		b.WriteString(sRunning.Styled(spinner))

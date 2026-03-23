@@ -5,6 +5,7 @@ Thanks for your interest in contributing to glmt! This guide covers everything y
 ## Prerequisites
 
 - Go 1.26+
+- golangci-lint v2 (`brew install golangci-lint` / [install guide](https://golangci-lint.run/docs/install/))
 - A GitLab instance (self-hosted or gitlab.com) for manual testing
 - Docker (for running e2e tests)
 
@@ -38,8 +39,7 @@ e2e/               End-to-end tests (testcontainers + GitLab)
 
 ## Code style
 
-- Run `gofmt` on all files. CI rejects unformatted code.
-- Run `go vet ./...` to catch common issues.
+- Run `golangci-lint run ./...` to check for issues. This covers formatting, vet, and more.
 - Keep the code simple and minimal — avoid unnecessary abstractions.
 
 ## Testing
@@ -66,7 +66,7 @@ These tests are slow (GitLab container startup) and require Docker. They are not
 
 Pull requests run three jobs automatically:
 
-1. **lint** — `go vet` + `gofmt` check
+1. **lint** — `golangci-lint`
 2. **test** — `go test ./...`
 3. **build** — verifies the binary compiles
 

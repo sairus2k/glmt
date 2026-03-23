@@ -116,7 +116,7 @@ func TestLogStep_WriteError_Swallowed(t *testing.T) {
 	require.NoError(t, err)
 
 	// Close the file to force write errors
-	fl.file.Close()
+	_ = fl.file.Close()
 
 	// Should not panic
 	assert.NotPanics(t, func() {

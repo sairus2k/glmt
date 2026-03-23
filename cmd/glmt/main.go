@@ -190,7 +190,7 @@ func runNonInteractive(host, token string, projectID int, mrsFlag string, enable
 	}
 
 	if !allMerged {
-		os.Exit(1)
+		return fmt.Errorf("not all MRs were merged")
 	}
 
 	return nil

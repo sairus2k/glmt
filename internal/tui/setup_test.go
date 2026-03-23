@@ -83,7 +83,7 @@ func TestSetup_TypeToken(t *testing.T) {
 
 func TestSetup_EnterToken(t *testing.T) {
 	sm := NewSetupModel()
-	sm.ValidateFn = func(host, token string) (string, error) {
+	sm.ValidateFn = func(_, _ string) (string, error) {
 		return "testuser", nil
 	}
 	var m tea.Model = sm
@@ -307,7 +307,7 @@ func TestSetup_ValidationCommand(t *testing.T) {
 
 func TestSetup_ValidationCommandError(t *testing.T) {
 	sm := NewSetupModel()
-	sm.ValidateFn = func(host, token string) (string, error) {
+	sm.ValidateFn = func(_, _ string) (string, error) {
 		return "", fmt.Errorf("invalid token")
 	}
 	var m tea.Model = sm

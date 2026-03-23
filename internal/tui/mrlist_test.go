@@ -122,7 +122,7 @@ func sendKey(m MRListModel, key string) MRListModel {
 }
 
 // sendKeyCmd sends a KeyPressMsg and returns both the updated model and the command.
-func sendKeyCmd(m MRListModel, key string) (MRListModel, tea.Cmd) {
+func sendKeyCmd(m MRListModel, key string) (MRListModel, tea.Cmd) { //nolint:unparam // cmd useful for future tests
 	updated, cmd := m.Update(mrListKey(key))
 	return updated.(MRListModel), cmd
 }
