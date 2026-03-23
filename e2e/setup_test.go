@@ -89,10 +89,9 @@ func createRootToken(t *testing.T, gitlabURL string) string {
 	t.Helper()
 
 	data := fmt.Sprintf(`grant_type=password&username=root&password=%s`, "glmt-test-password-123")
-	resp, err := http.Post(gitlabURL+"/oauth/token", "application/x-www-form-urlencoded", strings.NewReader(data))
-	if err != nil {
-		t.Fatalf("Failed to get OAuth token: %v", err)
-	}
+	req, _ := http.NewRequest("POST", gitlabURL+"/oauth/token", strings.NewReader(data))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp := apiDo(t, req)
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
@@ -114,7 +113,7 @@ func createRootToken(t *testing.T, gitlabURL string) string {
 	}
 	patJSON, _ := json.Marshal(patData)
 
-	req, _ := http.NewRequest("POST", gitlabURL+"/api/v4/users/1/personal_access_tokens", bytes.NewReader(patJSON))
+	req, _ = http.NewRequest("POST", gitlabURL+"/api/v4/users/1/personal_access_tokens", bytes.NewReader(patJSON))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+oauthResp.AccessToken)
 
