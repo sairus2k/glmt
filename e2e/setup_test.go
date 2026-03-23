@@ -220,6 +220,30 @@ func run(t *testing.T, dir, name string, args ...string) {
 	}
 }
 
+// runWithRetry executes a command, retrying on transient errors (502, 503, "hung up")
+// up to the given number of attempts with a delay between retries.
+func runWithRetry(t *testing.T, dir string, attempts int, delay time.Duration, name string, args ...string) {
+	t.Helper()
+	for i := 0; i < attempts; i++ {
+		cmd := exec.Command(name, args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			return
+		}
+		output := string(out)
+		transient := strings.Contains(output, "502") ||
+			strings.Contains(output, "503") ||
+			strings.Contains(output, "hung up") ||
+			strings.Contains(output, "unexpected disconnect")
+		if !transient || i == attempts-1 {
+			t.Fatalf("Command %s %v failed in %s: %v\n%s", name, args, dir, err, output)
+		}
+		t.Logf("Retrying %s %v (attempt %d/%d): %s", name, args, i+1, attempts, output)
+		time.Sleep(delay)
+	}
+}
+
 // cloneRepo clones the glmt repo from GitHub to a temp directory.
 func cloneRepo(t *testing.T) string {
 	t.Helper()
@@ -236,7 +260,7 @@ func pushToGitLab(t *testing.T, cloneDir, gitlabURL, token string) {
 	// Build authenticated remote URL: http://root:<token>@host:port/root/glmt-e2e-test.git
 	remote := strings.Replace(gitlabURL, "http://", fmt.Sprintf("http://root:%s@", token), 1) + "/root/glmt-e2e-test.git"
 	run(t, cloneDir, "git", "remote", "add", "gitlab", remote)
-	run(t, cloneDir, "git", "push", "gitlab", "main")
+	runWithRetry(t, cloneDir, 5, 10*time.Second, "git", "push", "gitlab", "main")
 }
 
 // createBranchesAndPush creates n feature branches with test files and pushes them.
@@ -254,7 +278,7 @@ func createBranchesAndPush(t *testing.T, cloneDir, gitlabURL, token string, n in
 		}
 		run(t, cloneDir, "git", "add", fileName)
 		run(t, cloneDir, "git", "commit", "-m", fmt.Sprintf("Add %s", fileName))
-		run(t, cloneDir, "git", "push", remote, branch)
+		runWithRetry(t, cloneDir, 5, 10*time.Second, "git", "push", remote, branch)
 	}
 }
 
