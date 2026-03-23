@@ -5,6 +5,9 @@ A local TUI that queues and merges GitLab MRs one by one — a lightweight alter
 [![Go](https://github.com/sairus2k/glmt/actions/workflows/ci.yml/badge.svg)](https://github.com/sairus2k/glmt/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/sairus2k/glmt)](https://goreportcard.com/report/github.com/sairus2k/glmt)
 
+> **Disclaimer:** This project is fully vibe-coded. The author doesn't know Go
+> and hasn't read the code. That said, it's used daily and solves a real need.
+
 ## Why
 
 GitLab merge trains are a Premium/Ultimate feature that runs parallel
@@ -79,6 +82,26 @@ For each selected MR, in order:
    main pipeline so CI runs against the actual final state.
 
 Skipped MRs do not abort the train. Already-merged MRs are never rolled back.
+
+## Alternatives
+
+Several open-source tools implement sequential MR merging for GitLab Free tier.
+If `glmt` doesn't fit your workflow, one of these might:
+
+| | [marge-bot](https://github.com/smarkets/marge-bot) | [gitlab-merger-bot](https://github.com/pepakriz/gitlab-merger-bot) | [Gitlab-Merge-Train](https://github.com/LatidoHealthTech/Gitlab-Merge-Train) | **glmt** |
+|---|---|---|---|---|
+| Type | Daemon | Daemon + web UI | Daemon | Local CLI |
+| Trigger | Assign MR to bot user | Label | Label | Interactive TUI |
+| Queue | Assignment-based | Internal FIFO per repo | Label-based | User-selected, user-ordered |
+| Deployment | Docker / PyPI | Docker + Helm | Docker | Single binary |
+| Active | ✓ (community fork) | Stale since 2023 | Proof of concept | ✓ |
+
+All of them run as a persistent service and react automatically to label changes
+or MR assignments — a good fit for teams that want a fully hands-off pipeline.
+
+`glmt` is different: it's a local CLI you run when you're ready to ship. No
+server to deploy, no bot user to maintain, no labels to manage. You pick the
+MRs, confirm, and watch it run.
 
 ## Requirements
 
