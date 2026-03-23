@@ -142,7 +142,7 @@ func (r *Runner) Run(ctx context.Context, mrs []*gitlab.MergeRequest) (*Result, 
 		} else if pipeline != nil {
 			result.MainPipelineURL = pipeline.WebURL
 			result.MainPipelineStatus = pipeline.Status
-			r.log(0, "main_pipeline_done", fmt.Sprintf("Main pipeline %s: %s", pipeline.Status, pipeline.WebURL))
+			r.log(0, "main_pipeline_done", pipeline.Status)
 		}
 	}
 
@@ -320,6 +320,7 @@ func (r *Runner) waitForMergeReady(ctx context.Context, mrIID int) (*gitlab.Merg
 }
 
 func (r *Runner) waitForMainPipeline(ctx context.Context, targetBranch string, minPipelineID int) (*gitlab.Pipeline, error) {
+	pipelineFound := false
 	for {
 		pipelines, err := r.client.ListPipelines(ctx, r.projectID, targetBranch, "")
 		if err != nil {
@@ -336,6 +337,10 @@ func (r *Runner) waitForMainPipeline(ctx context.Context, targetBranch string, m
 		}
 
 		pipeline := pipelines[0]
+		if !pipelineFound {
+			pipelineFound = true
+			r.log(0, "main_pipeline_wait", pipeline.WebURL)
+		}
 		switch pipeline.Status {
 		case "success", "failed", "canceled":
 			return pipeline, nil

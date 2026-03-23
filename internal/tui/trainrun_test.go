@@ -252,6 +252,50 @@ func TestTrainRun_DeduplicateConsecutiveSameStep(t *testing.T) {
 	assert.Equal(t, "Rebase successful", m.MRSteps()[0].Steps[0].Message)
 }
 
+func TestTrainRun_DedupedRunningStepKeepsSpinner(t *testing.T) {
+	m := newTestTrainModel()
+
+	// First cancel_main_pipeline_wait — should be running with spinner
+	result, _ := m.Update(trainStepMsg{mrIID: 42, step: "cancel_main_pipeline_wait", message: "Cancelling main pipeline..."})
+	m = result.(TrainRunModel)
+
+	require.Len(t, m.LogEntries(), 1)
+	assert.Equal(t, StepRunning, m.LogEntries()[0].Status, "initial cancel_main_pipeline_wait should be running")
+
+	// Second cancel_main_pipeline_wait (retry) — same display name, triggers dedup
+	result, _ = m.Update(trainStepMsg{mrIID: 42, step: "cancel_main_pipeline_wait", message: "No main pipeline found, retrying (1/3)..."})
+	m = result.(TrainRunModel)
+
+	require.Len(t, m.LogEntries(), 1, "should dedup into one entry")
+	assert.Equal(t, StepRunning, m.LogEntries()[0].Status, "deduped cancel_main_pipeline_wait must stay running (spinner visible)")
+	assert.Equal(t, "No main pipeline found, retrying (1/3)...", m.LogEntries()[0].Message)
+
+	// Also verify per-MR steps
+	require.Len(t, m.MRSteps()[0].Steps, 1, "per-MR steps should also dedup")
+	assert.Equal(t, StepRunning, m.MRSteps()[0].Steps[0].Status, "per-MR deduped step must stay running")
+}
+
+func TestTrainRun_ViewShowsMainPipelineURL(t *testing.T) {
+	m := newTestTrainModel()
+
+	// Initial main_pipeline_wait without URL
+	result, _ := m.Update(trainStepMsg{mrIID: 0, step: "main_pipeline_wait", message: "Waiting for main pipeline..."})
+	m = result.(TrainRunModel)
+
+	view := m.View()
+	assert.Contains(t, view.Content, "Main pipeline running")
+	assert.NotContains(t, view.Content, "https://gitlab.example.com/pipeline/99")
+
+	// Update with URL (dedup updates the message)
+	result, _ = m.Update(trainStepMsg{mrIID: 0, step: "main_pipeline_wait", message: "https://gitlab.example.com/pipeline/99"})
+	m = result.(TrainRunModel)
+
+	require.Len(t, m.LogEntries(), 1, "should dedup into one entry")
+	view = m.View()
+	assert.Contains(t, view.Content, "Main pipeline running")
+	assert.Contains(t, view.Content, "https://gitlab.example.com/pipeline/99")
+}
+
 func TestTrainRun_ViewShowsSkipped(t *testing.T) {
 	m := newTestTrainModel()
 

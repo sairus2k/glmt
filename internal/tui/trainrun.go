@@ -183,6 +183,7 @@ func (m TrainRunModel) handleStep(msg trainStepMsg) (tea.Model, tea.Cmd) {
 		if last.MRIID == entry.MRIID && last.Name == entry.Name {
 			last.Timestamp = entry.Timestamp
 			last.Message = entry.Message
+			last.Status = entry.Status
 			// Update per-MR steps too
 			if mrIdx >= 0 {
 				steps := m.mrSteps[mrIdx].Steps
@@ -191,6 +192,7 @@ func (m TrainRunModel) handleStep(msg trainStepMsg) (tea.Model, tea.Cmd) {
 					if s.Name == entry.Name {
 						s.Timestamp = entry.Timestamp
 						s.Message = entry.Message
+						s.Status = entry.Status
 					}
 				}
 			}
@@ -318,6 +320,12 @@ func (m TrainRunModel) View() tea.View {
 
 		// Step name
 		b.WriteString(entry.Name)
+
+		// Show pipeline URL inline for main pipeline running step
+		if entry.Name == "Main pipeline running" && strings.HasPrefix(entry.Message, "http") {
+			b.WriteString("  ")
+			b.WriteString(sFaint.Styled(entry.Message))
+		}
 
 		// Elapsed time for running entries (only the last one)
 		if entry.Status == StepRunning && isLast && !entry.StartedAt.IsZero() {
