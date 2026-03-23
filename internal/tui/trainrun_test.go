@@ -296,6 +296,81 @@ func TestTrainRun_ViewShowsMainPipelineURL(t *testing.T) {
 	assert.Contains(t, view.Content, "https://gitlab.example.com/pipeline/99")
 }
 
+func TestTrainRun_MainPipelineStepsTracked(t *testing.T) {
+	m := newTestTrainModel()
+
+	result, _ := m.Update(trainStepMsg{mrIID: 0, step: "main_pipeline_wait", message: "Waiting..."})
+	m = result.(TrainRunModel)
+
+	require.Len(t, m.MainPipelineSteps(), 1)
+	assert.Equal(t, "Main pipeline running", m.MainPipelineSteps()[0].Name)
+	assert.Equal(t, StepRunning, m.MainPipelineSteps()[0].Status)
+}
+
+func TestTrainRun_MainPipelineStepsDedup(t *testing.T) {
+	m := newTestTrainModel()
+
+	result, _ := m.Update(trainStepMsg{mrIID: 0, step: "main_pipeline_wait", message: "Waiting..."})
+	m = result.(TrainRunModel)
+	result, _ = m.Update(trainStepMsg{mrIID: 0, step: "main_pipeline_wait", message: "https://gitlab.example.com/pipeline/99"})
+	m = result.(TrainRunModel)
+
+	require.Len(t, m.MainPipelineSteps(), 1, "should dedup main pipeline steps")
+	assert.Equal(t, "https://gitlab.example.com/pipeline/99", m.MainPipelineSteps()[0].Message)
+}
+
+func TestTrainRun_MainPipelineStepsCompletedOnNewStep(t *testing.T) {
+	m := newTestTrainModel()
+
+	// Send main_pipeline_wait (running)
+	result, _ := m.Update(trainStepMsg{mrIID: 0, step: "main_pipeline_wait", message: "Waiting..."})
+	m = result.(TrainRunModel)
+	assert.Equal(t, StepRunning, m.MainPipelineSteps()[0].Status)
+
+	// Send main_pipeline_done — previous running step should be marked done
+	result, _ = m.Update(trainStepMsg{mrIID: 0, step: "main_pipeline_done", message: "success"})
+	m = result.(TrainRunModel)
+
+	require.Len(t, m.MainPipelineSteps(), 2)
+	assert.Equal(t, StepDone, m.MainPipelineSteps()[0].Status, "previous running main pipeline step should be done")
+	assert.Equal(t, StepDone, m.MainPipelineSteps()[1].Status)
+}
+
+func TestTrainRun_ViewHierarchicalLayout(t *testing.T) {
+	m := NewTrainRunModel([]*gitlab.MergeRequest{trainMR1, trainMR2})
+
+	// Complete first MR
+	steps := []trainStepMsg{
+		{mrIID: 42, step: "rebase_wait", message: "Rebasing..."},
+		{mrIID: 42, step: "rebase", message: "OK"},
+		{mrIID: 42, step: "merge_wait", message: "Waiting..."},
+		{mrIID: 42, step: "merge", message: "sha: abc123"},
+	}
+	for _, msg := range steps {
+		result, _ := m.Update(msg)
+		m = result.(TrainRunModel)
+	}
+	// Start second MR
+	result, _ := m.Update(trainStepMsg{mrIID: 38, step: "rebase_wait", message: "Rebasing..."})
+	m = result.(TrainRunModel)
+
+	view := m.View()
+	v := view.Content
+
+	// MR headers present
+	assert.Contains(t, v, "!42")
+	assert.Contains(t, v, "Fix auth token expiry")
+	assert.Contains(t, v, "!38")
+	assert.Contains(t, v, "Add rate limiting")
+
+	// Tree characters present for expanded MR steps
+	assert.Contains(t, v, "├─")
+	assert.Contains(t, v, "└─")
+
+	// No legend line (the old " · " joined format)
+	assert.NotContains(t, v, " · ")
+}
+
 func TestTrainRun_ViewShowsSkipped(t *testing.T) {
 	m := newTestTrainModel()
 

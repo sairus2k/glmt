@@ -39,15 +39,16 @@ type MRStepLog struct {
 // TrainRunModel is the bubbletea model for the train run screen.
 // It shows live progress of the merge train execution.
 type TrainRunModel struct {
-	mrs          []*gitlab.MergeRequest
-	mrSteps      []MRStepLog
-	logEntries   []StepEntry
-	currentMR    int
-	done         bool
-	aborted      bool
-	result       *train.Result
-	startTime    time.Time
-	spinnerFrame int
+	mrs               []*gitlab.MergeRequest
+	mrSteps           []MRStepLog
+	mainPipelineSteps []StepEntry
+	logEntries        []StepEntry
+	currentMR         int
+	done              bool
+	aborted           bool
+	result            *train.Result
+	startTime         time.Time
+	spinnerFrame      int
 }
 
 // Messages used by the train run screen.
@@ -176,6 +177,11 @@ func (m TrainRunModel) handleStep(msg trainStepMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
+	for i := range m.mainPipelineSteps {
+		if m.mainPipelineSteps[i].Status == StepRunning {
+			m.mainPipelineSteps[i].Status = StepDone
+		}
+	}
 
 	// Deduplicate: if the last log entry matches, update timestamp instead of appending
 	if n := len(m.logEntries); n > 0 {
@@ -195,6 +201,15 @@ func (m TrainRunModel) handleStep(msg trainStepMsg) (tea.Model, tea.Cmd) {
 						s.Status = entry.Status
 					}
 				}
+			} else if entry.MRIID == 0 {
+				if len(m.mainPipelineSteps) > 0 {
+					s := &m.mainPipelineSteps[len(m.mainPipelineSteps)-1]
+					if s.Name == entry.Name {
+						s.Timestamp = entry.Timestamp
+						s.Message = entry.Message
+						s.Status = entry.Status
+					}
+				}
 			}
 			return m, nil
 		}
@@ -203,6 +218,8 @@ func (m TrainRunModel) handleStep(msg trainStepMsg) (tea.Model, tea.Cmd) {
 	// Append to per-MR steps
 	if mrIdx >= 0 {
 		m.mrSteps[mrIdx].Steps = append(m.mrSteps[mrIdx].Steps, entry)
+	} else if entry.MRIID == 0 {
+		m.mainPipelineSteps = append(m.mainPipelineSteps, entry)
 	}
 
 	// Append to chronological log
@@ -289,55 +306,96 @@ func (m TrainRunModel) View() tea.View {
 		b.WriteString("\n\n")
 	}
 
-	// MR legend line
-	var legendParts []string
-	for _, mr := range m.mrs {
-		legendParts = append(legendParts, fmt.Sprintf("!%d %s", mr.IID, mr.Title))
+	// Per-MR hierarchical blocks
+	for i, mr := range m.mrs {
+		steps := m.mrSteps[i].Steps
+		status := mrOverallStatus(steps)
+
+		// MR header line
+		b.WriteString("  ")
+		b.WriteString(m.styledStepIcon(status))
+		b.WriteString("  ")
+		b.WriteString(sBold.Styled(fmt.Sprintf("!%d", mr.IID)))
+		b.WriteString("  ")
+		b.WriteString(mr.Title)
+		b.WriteString("\n")
+
+		// Step tree
+		m.renderStepTree(&b, steps)
+		b.WriteString("\n")
 	}
-	b.WriteString("  ")
-	b.WriteString(sFaint.Styled(strings.Join(legendParts, "  ·  ")))
-	b.WriteString("\n\n")
 
-	// Chronological log entries
-	for i, entry := range m.logEntries {
-		isLast := i == len(m.logEntries)-1
-
-		// Timestamp
-		ts := entry.Timestamp.Format("15:04:05")
+	// Main pipeline block (mrIID=0 steps)
+	if len(m.mainPipelineSteps) > 0 {
+		mainStatus := mrOverallStatus(m.mainPipelineSteps)
 		b.WriteString("  ")
-		b.WriteString(sFaint.Styled(ts))
+		b.WriteString(m.styledStepIcon(mainStatus))
 		b.WriteString("  ")
-
-		// Status icon
-		icon := m.styledStepIcon(entry.Status)
-		b.WriteString(icon)
-		b.WriteString("  ")
-
-		// MR reference (if MR-specific)
-		if entry.MRIID != 0 {
-			b.WriteString(sBold.Styled(fmt.Sprintf("!%d", entry.MRIID)))
-			b.WriteString("  ")
-		}
-
-		// Step name
-		b.WriteString(entry.Name)
-
-		// Show pipeline URL inline for main pipeline running step
-		if entry.Name == "Main pipeline running" && strings.HasPrefix(entry.Message, "http") {
-			b.WriteString("  ")
-			b.WriteString(sFaint.Styled(entry.Message))
-		}
-
-		// Elapsed time for running entries (only the last one)
-		if entry.Status == StepRunning && isLast && !entry.StartedAt.IsZero() {
-			b.WriteString("  ")
-			b.WriteString(sFaint.Styled(formatDuration(time.Since(entry.StartedAt))))
-		}
-
+		b.WriteString(sBold.Styled("Main pipeline"))
+		b.WriteString("\n")
+		m.renderStepTree(&b, m.mainPipelineSteps)
 		b.WriteString("\n")
 	}
 
 	return tea.NewView(b.String())
+}
+
+// renderStepTree renders a list of steps as a tree with connectors (├─ / └─).
+func (m TrainRunModel) renderStepTree(b *strings.Builder, steps []StepEntry) {
+	for j, step := range steps {
+		isLastStep := j == len(steps)-1
+
+		connector := "├─"
+		if isLastStep {
+			connector = "└─"
+		}
+
+		b.WriteString("  ")
+		b.WriteString(sFaint.Styled(connector))
+		b.WriteString(" ")
+		b.WriteString(m.styledStepIcon(step.Status))
+		b.WriteString(" ")
+		b.WriteString(step.Name)
+
+		// Show pipeline URL inline
+		if strings.HasPrefix(step.Message, "http") {
+			b.WriteString("  ")
+			b.WriteString(sFaint.Styled(step.Message))
+		}
+
+		// Elapsed time for the last running step
+		if step.Status == StepRunning && isLastStep && !step.StartedAt.IsZero() {
+			b.WriteString("  ")
+			b.WriteString(sFaint.Styled(formatDuration(time.Since(step.StartedAt))))
+		}
+
+		// Show merge SHA
+		if step.Name == "Merged" && step.Message != "" {
+			b.WriteString("  ")
+			b.WriteString(sFaint.Styled(step.Message))
+		}
+
+		b.WriteString("\n")
+	}
+}
+
+// mrOverallStatus derives the aggregate status for an MR from its steps.
+func mrOverallStatus(steps []StepEntry) StepStatus {
+	if len(steps) == 0 {
+		return StepPending
+	}
+	for _, s := range steps {
+		if s.Status == StepFailed {
+			return StepFailed
+		}
+		if s.Status == StepSkipped {
+			return StepSkipped
+		}
+		if s.Status == StepRunning {
+			return StepRunning
+		}
+	}
+	return StepDone
 }
 
 func (m TrainRunModel) styledStepIcon(status StepStatus) string {
@@ -381,6 +439,9 @@ func (m TrainRunModel) MRSteps() []MRStepLog { return m.mrSteps }
 
 // LogEntries returns the chronological log entries.
 func (m TrainRunModel) LogEntries() []StepEntry { return m.logEntries }
+
+// MainPipelineSteps returns the main pipeline step entries (mrIID=0).
+func (m TrainRunModel) MainPipelineSteps() []StepEntry { return m.mainPipelineSteps }
 
 // Result returns the train execution result.
 func (m TrainRunModel) Result() *train.Result { return m.result }
