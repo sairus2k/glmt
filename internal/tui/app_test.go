@@ -31,7 +31,7 @@ func TestExtractProjectPath_Empty(t *testing.T) {
 }
 
 func TestApp_StartsAtSetupWhenNoCredentials(t *testing.T) {
-	m := NewAppModel(nil, config.DefaultConfig(), "/tmp/test-config.toml", 0)
+	m := NewAppModel(nil, config.DefaultConfig(), "/tmp/test-config.toml", 0, "test")
 	assert.Equal(t, ScreenSetup, m.screen)
 }
 
@@ -41,7 +41,7 @@ func TestApp_StartsAtMRListWhenProjectConfigured(t *testing.T) {
 	cfg.Defaults.Repo = "team/project"
 	creds := &auth.Credentials{Host: "gitlab.example.com", Token: "test-token", Protocol: "https"}
 
-	m := NewAppModel(creds, cfg, "/tmp/test-config.toml", 0)
+	m := NewAppModel(creds, cfg, "/tmp/test-config.toml", 0, "test")
 	assert.Equal(t, ScreenMRList, m.screen)
 }
 
@@ -49,14 +49,14 @@ func TestApp_StartsAtRepoPickerWhenNoProject(t *testing.T) {
 	cfg := config.DefaultConfig()
 	creds := &auth.Credentials{Host: "gitlab.example.com", Token: "test-token", Protocol: "https"}
 
-	m := NewAppModel(creds, cfg, "/tmp/test-config.toml", 0)
+	m := NewAppModel(creds, cfg, "/tmp/test-config.toml", 0, "test")
 	assert.Equal(t, ScreenRepoPicker, m.screen)
 }
 
 func TestApp_SetupSuccessTransitionsToRepoPicker(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfgPath := t.TempDir() + "/config.toml"
-	m := NewAppModel(nil, cfg, cfgPath, 0)
+	m := NewAppModel(nil, cfg, cfgPath, 0, "test")
 	require.Equal(t, ScreenSetup, m.screen)
 
 	// Type host and token to populate the setup model
@@ -80,7 +80,7 @@ func TestApp_CLIOverrideProjectID_DoesNotAffectConfig(t *testing.T) {
 	cfg.Defaults.ProjectID = 0
 	creds := &auth.Credentials{Host: "gitlab.example.com", Token: "test-token", Protocol: "https"}
 
-	m := NewAppModel(creds, cfg, "/tmp/test-config.toml", 99)
+	m := NewAppModel(creds, cfg, "/tmp/test-config.toml", 99, "test")
 
 	// The override should be used for the current session
 	assert.Equal(t, 99, m.projectID)
@@ -95,7 +95,7 @@ func TestApp_CLICredentials_DoNotPersistToConfig(t *testing.T) {
 	cfg.GitLab.Token = "saved-token"
 	creds := &auth.Credentials{Host: "cli-host.example.com", Token: "cli-token", Protocol: "https"}
 
-	m := NewAppModel(creds, cfg, "/tmp/test-config.toml", 0)
+	m := NewAppModel(creds, cfg, "/tmp/test-config.toml", 0, "test")
 
 	// runtimeHost should reflect the CLI-provided creds
 	assert.Equal(t, "cli-host.example.com", m.runtimeHost)

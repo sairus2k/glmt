@@ -42,7 +42,7 @@ func TestTrainMergesMRs(t *testing.T) {
 
 	tmpCfgPath := t.TempDir() + "/glmt.toml"
 
-	model := tui.NewAppModel(creds, cfg, tmpCfgPath, 0)
+	model := tui.NewAppModel(creds, cfg, tmpCfgPath, 0, "test")
 
 	// Channels for synchronization via tea.WithFilter.
 	mrsLoaded := make(chan struct{}, 16)

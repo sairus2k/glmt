@@ -48,6 +48,8 @@ type AppModel struct {
 	userName    string
 	runtimeHost string // effective host for display (may differ from cfg)
 
+	version string
+
 	trainCancel context.CancelFunc
 	trainStepCh chan trainStepMsg
 
@@ -57,10 +59,11 @@ type AppModel struct {
 // NewAppModel creates the app model, deciding which screen to start on.
 // overrideProjectID is a per-invocation override (e.g. from CLI flags) that
 // is used without being persisted to cfg.
-func NewAppModel(creds *auth.Credentials, cfg *config.Config, cfgPath string, overrideProjectID int) AppModel {
+func NewAppModel(creds *auth.Credentials, cfg *config.Config, cfgPath string, overrideProjectID int, version string) AppModel {
 	m := AppModel{
 		cfg:     cfg,
 		cfgPath: cfgPath,
+		version: version,
 	}
 
 	if creds == nil {
@@ -221,7 +224,7 @@ func (m AppModel) View() tea.View {
 	}
 
 	// Header (3 lines)
-	header := "\n" + renderHeader(m.width) + "\n\n"
+	header := "\n" + renderHeader(m.width, m.version) + "\n\n"
 
 	// Pad content to fill available space
 	contentLines := strings.Count(view.Content, "\n")

@@ -18,6 +18,8 @@ import (
 	"github.com/sairus2k/glmt/internal/tui"
 )
 
+var version = "dev"
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -294,7 +296,7 @@ func runTUI(flagHost, flagToken string, flagProjectID int, enableLog bool) error
 	}
 
 	// Start TUI
-	model := tui.NewAppModel(creds, cfg, cfgPath, flagProjectID)
+	model := tui.NewAppModel(creds, cfg, cfgPath, flagProjectID, version)
 	model.FileLogger = fileLogger
 
 	// Wrap m.client in LoggingClient so ALL API calls are logged
