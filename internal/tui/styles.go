@@ -47,7 +47,7 @@ func renderFooter(hints []KeyHint, loginStatus string, width int) string {
 
 // renderHeader renders the header line with app name on the left and GitHub link on the right.
 func renderHeader(width int, version string) string {
-	left := "  " + sBold.Styled("glmt") + " " + sFaint.Styled("v"+version+" — GitLab Merge Train")
+	left := "  " + sBold.Styled("glmt") + " " + sFaint.Styled("v"+version+" — Merge Queue for GitLab")
 	right := sFaint.Styled("GitHub: https://github.com/sairus2k/glmt")
 
 	leftLen := ansi.StringWidth(left)

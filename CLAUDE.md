@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is glmt
 
-GitLab Merge Train CLI — a local interactive TUI that merges a sequence of GitLab MRs one by one, rebasing each onto the freshly updated target branch and managing intermediate CI pipelines. Built for self-hosted GitLab Free where merge trains are not available.
+Sequential merge queue for GitLab — a local TUI that queues and merges GitLab MRs one by one, rebasing each onto the freshly updated target branch and managing intermediate CI pipelines. A lightweight alternative to GitLab's merge trains (Premium/Ultimate) for self-hosted GitLab Free.
 
 ## Commands
 

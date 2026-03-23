@@ -1,15 +1,16 @@
-# `glmt` — GitLab Merge Train CLI
+# `glmt` — Sequential Merge Queue for GitLab
 
-A local interactive TUI that merges a sequence of GitLab MRs one by one.
+A local TUI that queues and merges GitLab MRs one by one — a lightweight alternative to GitLab's merge trains.
 
 [![Go](https://github.com/sairus2k/glmt/actions/workflows/ci.yml/badge.svg)](https://github.com/sairus2k/glmt/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/sairus2k/glmt)](https://goreportcard.com/report/github.com/sairus2k/glmt)
 
 ## Why
 
-GitLab merge trains are a Premium/Ultimate feature. On self-hosted GitLab Free,
-merging multiple MRs sequentially — rebasing each onto an up-to-date target
-branch and waiting for CI — is a tedious manual process.
+GitLab merge trains are a Premium/Ultimate feature that runs parallel
+merged-result pipelines for queued MRs. On self-hosted GitLab Free, merging
+multiple MRs sequentially — rebasing each onto an up-to-date target branch
+and waiting for CI — is a tedious manual process.
 
 `glmt` automates this. Run it, pick the MRs you want to ship, and watch them
 merge in order. No server, no labels, no webhooks. Close the terminal when it
@@ -47,7 +48,7 @@ glmt
    passed, no conflicts, discussions resolved) can be toggled for merging.
    Ineligible MRs are shown grayed out with a reason. Reorder with
    `Shift+Up/Down`.
-3. **Press Enter** -- the merge train runs. Each MR is rebased and merged
+3. **Press Enter** -- the merge queue runs. Each MR is rebased and merged
    directly. Progress is shown live.
 
 ## Configuration
