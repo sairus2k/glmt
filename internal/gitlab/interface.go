@@ -79,15 +79,16 @@ type Client interface {
 
 	// MergeMergeRequest merges the MR with a SHA guard.
 	// sha is the expected head SHA — the server returns 409 if it doesn't match.
-	// Returns nil on success.
-	MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) error
+	// Returns the merge commit SHA on success.
+	MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) (string, error)
 
 	// GetMergeRequestPipeline returns the head pipeline for a merge request,
 	// along with the MR's DetailedMergeStatus.
 	GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*Pipeline, string, error)
 
 	// ListPipelines returns pipelines for a ref, ordered by ID descending.
-	ListPipelines(ctx context.Context, projectID int, ref, status string) ([]*Pipeline, error)
+	// If sha is non-empty, only pipelines for that exact commit SHA are returned.
+	ListPipelines(ctx context.Context, projectID int, ref, status, sha string) ([]*Pipeline, error)
 
 	// CancelPipeline cancels a running pipeline.
 	CancelPipeline(ctx context.Context, projectID, pipelineID int) error

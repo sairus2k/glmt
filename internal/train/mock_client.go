@@ -23,9 +23,9 @@ type MockClient struct {
 	ListMergeRequestsFullFn   func(ctx context.Context, projectPath string) ([]*gitlab.MergeRequest, error)
 	GetMergeRequestFn         func(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error)
 	RebaseMergeRequestFn      func(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error)
-	MergeMergeRequestFn       func(ctx context.Context, projectID, mrIID int, sha string) error
+	MergeMergeRequestFn       func(ctx context.Context, projectID, mrIID int, sha string) (string, error)
 	GetMergeRequestPipelineFn func(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, string, error)
-	ListPipelinesFn           func(ctx context.Context, projectID int, ref, status string) ([]*gitlab.Pipeline, error)
+	ListPipelinesFn           func(ctx context.Context, projectID int, ref, status, sha string) ([]*gitlab.Pipeline, error)
 	CancelPipelineFn          func(ctx context.Context, projectID, pipelineID int) error
 	RetryPipelineFn           func(ctx context.Context, projectID, pipelineID int) (*gitlab.Pipeline, error)
 }
@@ -74,12 +74,12 @@ func (m *MockClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID in
 	return &gitlab.MergeRequest{IID: mrIID, SHA: fmt.Sprintf("sha-%d", mrIID)}, nil
 }
 
-func (m *MockClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) error {
+func (m *MockClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) (string, error) {
 	m.record("MergeMergeRequest", projectID, mrIID, sha)
 	if m.MergeMergeRequestFn != nil {
 		return m.MergeMergeRequestFn(ctx, projectID, mrIID, sha)
 	}
-	return nil
+	return fmt.Sprintf("merge-commit-sha-%d", mrIID), nil
 }
 
 func (m *MockClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, string, error) {
@@ -90,10 +90,10 @@ func (m *MockClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrI
 	return &gitlab.Pipeline{Status: "success", SHA: fmt.Sprintf("sha-%d", mrIID)}, "", nil
 }
 
-func (m *MockClient) ListPipelines(ctx context.Context, projectID int, ref, status string) ([]*gitlab.Pipeline, error) {
-	m.record("ListPipelines", projectID, ref, status)
+func (m *MockClient) ListPipelines(ctx context.Context, projectID int, ref, status, sha string) ([]*gitlab.Pipeline, error) {
+	m.record("ListPipelines", projectID, ref, status, sha)
 	if m.ListPipelinesFn != nil {
-		return m.ListPipelinesFn(ctx, projectID, ref, status)
+		return m.ListPipelinesFn(ctx, projectID, ref, status, sha)
 	}
 	return nil, nil
 }

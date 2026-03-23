@@ -149,14 +149,16 @@ func TestMergeMergeRequest_Success(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprint(w, `{
 			"iid": 10, "title": "MR", "state": "merged",
-			"source_branch": "b", "target_branch": "main", "sha": "abc123"
+			"source_branch": "b", "target_branch": "main", "sha": "abc123",
+			"merge_commit_sha": "deadbeef"
 		}`)
 	}))
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	err := client.MergeMergeRequest(context.Background(), 1, 10, "abc123")
+	mergeCommitSHA, err := client.MergeMergeRequest(context.Background(), 1, 10, "abc123")
 	require.NoError(t, err)
+	assert.Equal(t, "deadbeef", mergeCommitSHA)
 }
 
 func TestMergeMergeRequest_SHAMismatch(t *testing.T) {
@@ -167,9 +169,10 @@ func TestMergeMergeRequest_SHAMismatch(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	err := client.MergeMergeRequest(context.Background(), 1, 10, "wrong-sha")
+	mergeCommitSHA, err := client.MergeMergeRequest(context.Background(), 1, 10, "wrong-sha")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrSHAMismatch)
+	assert.Empty(t, mergeCommitSHA)
 }
 
 func TestMergeMergeRequest_NotMergeable(t *testing.T) {
@@ -180,9 +183,10 @@ func TestMergeMergeRequest_NotMergeable(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	err := client.MergeMergeRequest(context.Background(), 1, 10, "abc123")
+	mergeCommitSHA, err := client.MergeMergeRequest(context.Background(), 1, 10, "abc123")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrNotMergeable)
+	assert.Empty(t, mergeCommitSHA)
 }
 
 func TestGetMergeRequestPipeline(t *testing.T) {
@@ -238,7 +242,7 @@ func TestListPipelines(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	pipelines, err := client.ListPipelines(context.Background(), 1, "main", "")
+	pipelines, err := client.ListPipelines(context.Background(), 1, "main", "", "")
 	require.NoError(t, err)
 	require.Len(t, pipelines, 2)
 
@@ -249,6 +253,24 @@ func TestListPipelines(t *testing.T) {
 
 	assert.Equal(t, 299, pipelines[1].ID)
 	assert.Equal(t, "failed", pipelines[1].Status)
+}
+
+func TestListPipelines_WithSHAFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "main", r.URL.Query().Get("ref"))
+		assert.Equal(t, "abc123", r.URL.Query().Get("sha"))
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `[{"id": 400, "status": "running", "ref": "main", "sha": "abc123", "web_url": "https://gitlab.com/pipeline/400"}]`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	pipelines, err := client.ListPipelines(context.Background(), 1, "main", "", "abc123")
+	require.NoError(t, err)
+	require.Len(t, pipelines, 1)
+	assert.Equal(t, 400, pipelines[0].ID)
+	assert.Equal(t, "abc123", pipelines[0].SHA)
 }
 
 func TestCancelPipeline(t *testing.T) {

@@ -142,25 +142,26 @@ func (c *APIClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int
 }
 
 // MergeMergeRequest merges the MR with a SHA guard.
-func (c *APIClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) error {
+// Returns the merge commit SHA on success.
+func (c *APIClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) (string, error) {
 	opts := &goGitLab.AcceptMergeRequestOptions{
 		SHA: goGitLab.Ptr(sha),
 	}
 
-	_, _, err := c.client.MergeRequests.AcceptMergeRequest(int64(projectID), int64(mrIID), opts, goGitLab.WithContext(ctx))
+	mr, _, err := c.client.MergeRequests.AcceptMergeRequest(int64(projectID), int64(mrIID), opts, goGitLab.WithContext(ctx))
 	if err != nil {
 		var errResp *goGitLab.ErrorResponse
 		if errors.As(err, &errResp) && errResp.Response != nil {
 			if errResp.Response.StatusCode == 409 {
-				return fmt.Errorf("merging MR %d: %w", mrIID, ErrSHAMismatch)
+				return "", fmt.Errorf("merging MR %d: %w", mrIID, ErrSHAMismatch)
 			}
 			if errResp.Response.StatusCode == 405 {
-				return fmt.Errorf("merging MR %d: %w", mrIID, ErrNotMergeable)
+				return "", fmt.Errorf("merging MR %d: %w", mrIID, ErrNotMergeable)
 			}
 		}
-		return fmt.Errorf("merging MR %d: %w", mrIID, err)
+		return "", fmt.Errorf("merging MR %d: %w", mrIID, err)
 	}
-	return nil
+	return mr.MergeCommitSHA, nil
 }
 
 // GetMergeRequestPipeline returns the head pipeline for a merge request,
@@ -185,7 +186,8 @@ func (c *APIClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrII
 }
 
 // ListPipelines returns pipelines for a ref, ordered by ID descending.
-func (c *APIClient) ListPipelines(ctx context.Context, projectID int, ref, status string) ([]*Pipeline, error) {
+// If sha is non-empty, only pipelines for that exact commit SHA are returned.
+func (c *APIClient) ListPipelines(ctx context.Context, projectID int, ref, status, sha string) ([]*Pipeline, error) {
 	opts := &goGitLab.ListProjectPipelinesOptions{
 		ListOptions: goGitLab.ListOptions{PerPage: 1},
 		Ref:         goGitLab.Ptr(ref),
@@ -195,6 +197,9 @@ func (c *APIClient) ListPipelines(ctx context.Context, projectID int, ref, statu
 	if status != "" {
 		pipelineStatus := goGitLab.BuildStateValue(status)
 		opts.Status = &pipelineStatus
+	}
+	if sha != "" {
+		opts.SHA = goGitLab.Ptr(sha)
 	}
 
 	pipelines, _, err := c.client.Pipelines.ListProjectPipelines(projectID, opts, goGitLab.WithContext(ctx))

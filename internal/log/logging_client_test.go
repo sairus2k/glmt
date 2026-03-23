@@ -35,13 +35,13 @@ func (m *mockClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID in
 	m.rebaseCalled = true
 	return &gitlab.MergeRequest{IID: mrIID}, nil
 }
-func (m *mockClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) error {
-	return nil
+func (m *mockClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) (string, error) {
+	return "", nil
 }
 func (m *mockClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, string, error) {
 	return nil, "", nil
 }
-func (m *mockClient) ListPipelines(ctx context.Context, projectID int, ref, status string) ([]*gitlab.Pipeline, error) {
+func (m *mockClient) ListPipelines(ctx context.Context, projectID int, ref, status, sha string) ([]*gitlab.Pipeline, error) {
 	return nil, nil
 }
 func (m *mockClient) CancelPipeline(ctx context.Context, projectID, pipelineID int) error {

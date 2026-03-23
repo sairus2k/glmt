@@ -60,11 +60,11 @@ func (c *LoggingClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID
 	return result, err
 }
 
-func (c *LoggingClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) error {
+func (c *LoggingClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) (string, error) {
 	start := time.Now()
-	err := c.inner.MergeMergeRequest(ctx, projectID, mrIID, sha)
+	mergeCommitSHA, err := c.inner.MergeMergeRequest(ctx, projectID, mrIID, sha)
 	c.logCall("MergeMergeRequest", map[string]any{"project_id": projectID, "mr_iid": mrIID}, err, start)
-	return err
+	return mergeCommitSHA, err
 }
 
 func (c *LoggingClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, string, error) {
@@ -74,10 +74,10 @@ func (c *LoggingClient) GetMergeRequestPipeline(ctx context.Context, projectID, 
 	return p, status, err
 }
 
-func (c *LoggingClient) ListPipelines(ctx context.Context, projectID int, ref, status string) ([]*gitlab.Pipeline, error) {
+func (c *LoggingClient) ListPipelines(ctx context.Context, projectID int, ref, status, sha string) ([]*gitlab.Pipeline, error) {
 	start := time.Now()
-	result, err := c.inner.ListPipelines(ctx, projectID, ref, status)
-	c.logCall("ListPipelines", map[string]any{"project_id": projectID, "ref": ref, "status": status}, err, start)
+	result, err := c.inner.ListPipelines(ctx, projectID, ref, status, sha)
+	c.logCall("ListPipelines", map[string]any{"project_id": projectID, "ref": ref, "status": status, "sha": sha}, err, start)
 	return result, err
 }
 

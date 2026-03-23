@@ -49,6 +49,7 @@ type Runner struct {
 	PollPipelineInterval     time.Duration
 	MaxCancelPipelineRetries int
 	MaxMergeStatusRetries    int
+	MaxMainPipelineAttempts  int
 }
 
 // NewRunner creates a new train runner.
@@ -61,6 +62,7 @@ func NewRunner(client gitlab.Client, projectID int, logger Logger) *Runner {
 		PollPipelineInterval:     10 * time.Second,
 		MaxCancelPipelineRetries: 3,
 		MaxMergeStatusRetries:    5,
+		MaxMainPipelineAttempts:  30,
 	}
 }
 
@@ -78,16 +80,9 @@ func (r *Runner) Run(ctx context.Context, mrs []*gitlab.MergeRequest) (*Result, 
 	}
 
 	var lastCancelledPipelineID int
+	var lastMergeCommitSHA string
 	anyMerged := false
 	targetBranch := mrs[0].TargetBranch
-
-	var preTrainPipelineID int
-	if ctx.Err() == nil {
-		pipelines, err := r.client.ListPipelines(ctx, r.projectID, targetBranch, "")
-		if err == nil && len(pipelines) > 0 {
-			preTrainPipelineID = pipelines[0].ID
-		}
-	}
 
 	for i, mr := range mrs {
 		if err := ctx.Err(); err != nil {
@@ -96,12 +91,13 @@ func (r *Runner) Run(ctx context.Context, mrs []*gitlab.MergeRequest) (*Result, 
 
 		isLast := i == len(mrs)-1
 
-		status, skipReason := r.processMR(ctx, mr, isLast, &lastCancelledPipelineID)
+		status, skipReason, mergeCommitSHA := r.processMR(ctx, mr, isLast, &lastCancelledPipelineID)
 		result.MRResults[i].Status = status
 		result.MRResults[i].SkipReason = skipReason
 
 		if status == MRStatusMerged {
 			anyMerged = true
+			lastMergeCommitSHA = mergeCommitSHA
 		}
 
 		// Check context after processing
@@ -129,11 +125,7 @@ func (r *Runner) Run(ctx context.Context, mrs []*gitlab.MergeRequest) (*Result, 
 	// Step 7: Wait for main pipeline if any MR was merged or a pipeline was restarted
 	if anyMerged {
 		r.log(0, "main_pipeline_wait", "Waiting for main pipeline...")
-		minPipelineID := preTrainPipelineID
-		if lastCancelledPipelineID > minPipelineID {
-			minPipelineID = lastCancelledPipelineID
-		}
-		pipeline, err := r.waitForMainPipeline(ctx, targetBranch, minPipelineID)
+		pipeline, err := r.waitForMainPipeline(ctx, targetBranch, lastMergeCommitSHA)
 		if err != nil {
 			if ctx.Err() != nil {
 				return result, ctx.Err()
@@ -149,20 +141,20 @@ func (r *Runner) Run(ctx context.Context, mrs []*gitlab.MergeRequest) (*Result, 
 	return result, nil
 }
 
-func (r *Runner) processMR(ctx context.Context, mr *gitlab.MergeRequest, isLast bool, lastCancelledPipelineID *int) (MRStatus, string) {
+func (r *Runner) processMR(ctx context.Context, mr *gitlab.MergeRequest, isLast bool, lastCancelledPipelineID *int) (MRStatus, string, string) {
 	return r.processMRAttempt(ctx, mr, isLast, lastCancelledPipelineID, false)
 }
 
-func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, isLast bool, lastCancelledPipelineID *int, isRetry bool) (MRStatus, string) {
+func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, isLast bool, lastCancelledPipelineID *int, isRetry bool) (MRStatus, string, string) {
 	// Step 1: REBASE
 	r.log(mr.IID, "rebase_wait", "Rebasing merge request...")
 	_, err := r.client.RebaseMergeRequest(ctx, r.projectID, mr.IID)
 	if err != nil {
 		if ctx.Err() != nil {
-			return MRStatusPending, ""
+			return MRStatusPending, "", ""
 		}
 		r.log(mr.IID, "skip", fmt.Sprintf("Rebase conflict: %v", err))
-		return MRStatusSkipped, fmt.Sprintf("rebase conflict: %v", err)
+		return MRStatusSkipped, fmt.Sprintf("rebase conflict: %v", err), ""
 	}
 	r.log(mr.IID, "rebase", "Rebase successful")
 
@@ -175,23 +167,23 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 	currentMR, err := r.waitForMergeReady(ctx, mr.IID)
 	if err != nil {
 		if ctx.Err() != nil {
-			return MRStatusPending, ""
+			return MRStatusPending, "", ""
 		}
 		r.log(mr.IID, "skip", fmt.Sprintf("Not mergeable: %v", err))
-		return MRStatusSkipped, fmt.Sprintf("not mergeable: %v", err)
+		return MRStatusSkipped, fmt.Sprintf("not mergeable: %v", err), ""
 	}
 
 	r.log(mr.IID, "merge", fmt.Sprintf("Merging with SHA guard (sha=%s)...", currentMR.SHA))
-	mergeErr := r.client.MergeMergeRequest(ctx, r.projectID, mr.IID, currentMR.SHA)
+	mergeCommitSHA, mergeErr := r.client.MergeMergeRequest(ctx, r.projectID, mr.IID, currentMR.SHA)
 	if mergeErr != nil {
 		if ctx.Err() != nil {
-			return MRStatusPending, ""
+			return MRStatusPending, "", ""
 		}
 		if errors.Is(mergeErr, ErrSHAMismatch) {
 			if isRetry {
 				// Second SHA mismatch — skip
 				r.log(mr.IID, "skip", "SHA mismatch on retry, skipping")
-				return MRStatusSkipped, "SHA mismatch on retry"
+				return MRStatusSkipped, "SHA mismatch on retry", ""
 			}
 			// First SHA mismatch — retry from step 1
 			r.log(mr.IID, "merge_sha_mismatch", "SHA mismatch, retrying from rebase...")
@@ -205,35 +197,38 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 				currentMR, err = r.waitForMergeReady(ctx, mr.IID)
 				if err != nil {
 					if ctx.Err() != nil {
-						return MRStatusPending, ""
+						return MRStatusPending, "", ""
 					}
 					r.log(mr.IID, "skip", fmt.Sprintf("Not mergeable on 405 retry: %v", err))
-					return MRStatusSkipped, fmt.Sprintf("not mergeable on 405 retry: %v", err)
+					return MRStatusSkipped, fmt.Sprintf("not mergeable on 405 retry: %v", err), ""
 				}
-				mergeErr = r.client.MergeMergeRequest(ctx, r.projectID, mr.IID, currentMR.SHA)
+				mergeCommitSHA, mergeErr = r.client.MergeMergeRequest(ctx, r.projectID, mr.IID, currentMR.SHA)
 				if mergeErr == nil {
 					break
 				}
 				if ctx.Err() != nil {
-					return MRStatusPending, ""
+					return MRStatusPending, "", ""
 				}
 				if !errors.Is(mergeErr, gitlab.ErrNotMergeable) {
 					// Different error — fall through to skip
 					r.log(mr.IID, "skip", fmt.Sprintf("Merge failed on 405 retry: %v", mergeErr))
-					return MRStatusSkipped, fmt.Sprintf("merge failed: %v", mergeErr)
+					return MRStatusSkipped, fmt.Sprintf("merge failed: %v", mergeErr), ""
 				}
 			}
 			if mergeErr != nil {
 				r.log(mr.IID, "skip", "Merge 405 retries exhausted, skipping")
-				return MRStatusSkipped, "merge 405 retries exhausted"
+				return MRStatusSkipped, "merge 405 retries exhausted", ""
 			}
 			// merge succeeded in retry loop — fall through to success path
 		} else {
 			r.log(mr.IID, "skip", fmt.Sprintf("Merge failed: %v", mergeErr))
-			return MRStatusSkipped, fmt.Sprintf("merge failed: %v", mergeErr)
+			return MRStatusSkipped, fmt.Sprintf("merge failed: %v", mergeErr), ""
 		}
 	}
 	r.log(mr.IID, "merge", "Merged successfully")
+	if mergeCommitSHA == "" {
+		r.log(mr.IID, "merge", "Warning: GitLab did not return merge commit SHA, pipeline lookup may be imprecise")
+	}
 
 	// Step 4: CANCEL MAIN PIPELINE (if more MRs remain)
 	if !isLast {
@@ -241,7 +236,7 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 		var pipeline *gitlab.Pipeline
 		var err error
 
-		pipeline, err = r.findCancellablePipeline(ctx, mr.TargetBranch)
+		pipeline, err = r.findCancellablePipeline(ctx, mr.TargetBranch, mergeCommitSHA)
 		if err != nil {
 			r.log(mr.IID, "cancel_main_pipeline", fmt.Sprintf("Failed to list pipelines: %v", err))
 		}
@@ -251,7 +246,7 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 			select {
 			case <-ctx.Done():
 			case <-time.After(r.PollPipelineInterval):
-				pipeline, err = r.findCancellablePipeline(ctx, mr.TargetBranch)
+				pipeline, err = r.findCancellablePipeline(ctx, mr.TargetBranch, mergeCommitSHA)
 				if err != nil {
 					r.log(mr.IID, "cancel_main_pipeline", fmt.Sprintf("Failed to list pipelines on retry: %v", err))
 				}
@@ -274,16 +269,17 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 	}
 	// Step 5: If last MR and it merged, let main pipeline run naturally (done implicitly)
 
-	return MRStatusMerged, ""
+	return MRStatusMerged, "", mergeCommitSHA
 }
 
-func (r *Runner) findCancellablePipeline(ctx context.Context, ref string) (*gitlab.Pipeline, error) {
-	for _, status := range []string{"running", "pending", "created"} {
-		pipelines, err := r.client.ListPipelines(ctx, r.projectID, ref, status)
-		if err != nil {
-			return nil, err
-		}
-		if len(pipelines) > 0 {
+func (r *Runner) findCancellablePipeline(ctx context.Context, ref, sha string) (*gitlab.Pipeline, error) {
+	pipelines, err := r.client.ListPipelines(ctx, r.projectID, ref, "", sha)
+	if err != nil {
+		return nil, err
+	}
+	if len(pipelines) > 0 {
+		switch pipelines[0].Status {
+		case "running", "pending", "created":
 			return pipelines[0], nil
 		}
 	}
@@ -319,15 +315,15 @@ func (r *Runner) waitForMergeReady(ctx context.Context, mrIID int) (*gitlab.Merg
 	}
 }
 
-func (r *Runner) waitForMainPipeline(ctx context.Context, targetBranch string, minPipelineID int) (*gitlab.Pipeline, error) {
+func (r *Runner) waitForMainPipeline(ctx context.Context, targetBranch, sha string) (*gitlab.Pipeline, error) {
 	pipelineFound := false
-	for {
-		pipelines, err := r.client.ListPipelines(ctx, r.projectID, targetBranch, "")
+	for attempt := 0; attempt < r.MaxMainPipelineAttempts; attempt++ {
+		pipelines, err := r.client.ListPipelines(ctx, r.projectID, targetBranch, "", sha)
 		if err != nil {
 			return nil, err
 		}
-		if len(pipelines) == 0 || pipelines[0].ID <= minPipelineID {
-			// No pipeline yet or stale pipeline — poll again
+		if len(pipelines) == 0 {
+			// No pipeline yet — poll again
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -352,6 +348,7 @@ func (r *Runner) waitForMainPipeline(ctx context.Context, targetBranch string, m
 		case <-time.After(r.PollPipelineInterval):
 		}
 	}
+	return nil, fmt.Errorf("timed out waiting for main pipeline after %d attempts", r.MaxMainPipelineAttempts)
 }
 
 func (r *Runner) log(mrIID int, step, message string) {
