@@ -169,9 +169,7 @@ func (m RepoPickerModel) View() tea.View {
 	default:
 		visible := m.visibleItems()
 		end := m.scrollOffset + visible
-		if end > len(m.filtered) {
-			end = len(m.filtered)
-		}
+		end = min(end, len(m.filtered))
 		for i := m.scrollOffset; i < end; i++ {
 			p := m.filtered[i]
 			if i == m.cursor {
@@ -230,11 +228,7 @@ func (m RepoPickerModel) visibleItems() int {
 	if m.contentHeight <= repoPickerHeaderLines {
 		return len(m.filtered) // no constraint
 	}
-	v := m.contentHeight - repoPickerHeaderLines
-	if v < 1 {
-		v = 1
-	}
-	return v
+	return max(m.contentHeight-repoPickerHeaderLines, 1)
 }
 
 // adjustScroll adjusts scrollOffset to keep the cursor visible.

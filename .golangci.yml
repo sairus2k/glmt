@@ -12,6 +12,14 @@ linters:
     - unparam
     - errorlint
     - revive
+    - modernize
+    - testifylint
+    - intrange
+    - nilnil
+  exclusions:
+    rules:
+      - linters: [modernize]
+        text: "newexpr"
   settings:
     revive:
       rules:

@@ -691,11 +691,7 @@ func (m MRListModel) visibleItems() int {
 	if m.contentHeight <= mrListHeaderLines {
 		return m.totalCount() + 1 // +1 for separator; no constraint
 	}
-	v := m.contentHeight - mrListHeaderLines
-	if v < 1 {
-		v = 1
-	}
-	return v
+	return max(m.contentHeight-mrListHeaderLines, 1)
 }
 
 // adjustScroll adjusts scrollOffset to keep the cursor visible,

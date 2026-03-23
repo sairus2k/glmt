@@ -28,26 +28,26 @@ func (m *mockClient) ListProjects(_ context.Context, _ string) ([]*gitlab.Projec
 func (m *mockClient) ListMergeRequestsFull(_ context.Context, _ string) ([]*gitlab.MergeRequest, error) {
 	return nil, nil
 }
-func (m *mockClient) GetMergeRequest(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error) {
+func (m *mockClient) GetMergeRequest(_ context.Context, _, mrIID int) (*gitlab.MergeRequest, error) {
 	return &gitlab.MergeRequest{IID: mrIID}, nil
 }
-func (m *mockClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int) (*gitlab.MergeRequest, error) {
+func (m *mockClient) RebaseMergeRequest(_ context.Context, _, mrIID int) (*gitlab.MergeRequest, error) {
 	m.rebaseCalled = true
 	return &gitlab.MergeRequest{IID: mrIID}, nil
 }
-func (m *mockClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) (string, error) {
+func (m *mockClient) MergeMergeRequest(_ context.Context, _, _ int, _ string) (string, error) {
 	return "", nil
 }
-func (m *mockClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, string, error) {
+func (m *mockClient) GetMergeRequestPipeline(_ context.Context, _, _ int) (*gitlab.Pipeline, string, error) {
 	return nil, "", nil
 }
-func (m *mockClient) ListPipelines(ctx context.Context, projectID int, ref, status, sha string) ([]*gitlab.Pipeline, error) {
+func (m *mockClient) ListPipelines(_ context.Context, _ int, _, _, _ string) ([]*gitlab.Pipeline, error) {
 	return nil, nil
 }
-func (m *mockClient) CancelPipeline(ctx context.Context, projectID, pipelineID int) error {
+func (m *mockClient) CancelPipeline(_ context.Context, _, _ int) error {
 	return nil
 }
-func (m *mockClient) RetryPipeline(ctx context.Context, projectID, pipelineID int) (*gitlab.Pipeline, error) {
+func (m *mockClient) RetryPipeline(_ context.Context, _, pipelineID int) (*gitlab.Pipeline, error) {
 	return &gitlab.Pipeline{ID: pipelineID}, nil
 }
 
@@ -89,6 +89,6 @@ func TestLoggingClient_DelegatesAndLogs(t *testing.T) {
 	assert.Equal(t, "RebaseMergeRequest", entry2["msg"])
 	api := entry2["api"].(map[string]any)
 	args := api["args"].(map[string]any)
-	assert.Equal(t, float64(123), args["project_id"])
-	assert.Equal(t, float64(42), args["mr_iid"])
+	assert.InDelta(t, float64(123), args["project_id"], 0)
+	assert.InDelta(t, float64(42), args["mr_iid"], 0)
 }

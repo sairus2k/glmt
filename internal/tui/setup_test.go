@@ -40,7 +40,7 @@ func TestSetup_InitialState(t *testing.T) {
 	assert.Empty(t, m.Host())
 	assert.Empty(t, m.Token())
 	assert.Empty(t, m.UserName())
-	assert.Nil(t, m.Err())
+	assert.NoError(t, m.Err())
 }
 
 func TestSetup_TypeHost(t *testing.T) {
@@ -154,7 +154,7 @@ func TestSetup_Backspace_EmptyInput(t *testing.T) {
 	m, _ = m.Update(specialKeyPress(tea.KeyBackspace))
 
 	sm := asSetup(t, m)
-	assert.Equal(t, "", sm.Host())
+	assert.Empty(t, sm.Host())
 	assert.Equal(t, SetupStateHost, sm.State())
 }
 
@@ -249,7 +249,7 @@ func TestSetup_ErrorRetry(t *testing.T) {
 	assert.Equal(t, SetupStateHost, sm.State())
 	assert.Empty(t, sm.Host())
 	assert.Empty(t, sm.Token())
-	assert.Nil(t, sm.Err())
+	assert.NoError(t, sm.Err())
 }
 
 // executeBatchCmd runs a command and, if it returns a BatchMsg, collects all
@@ -341,13 +341,13 @@ func TestSetup_GhostText(t *testing.T) {
 	t.Run("empty when input diverges", func(t *testing.T) {
 		m := NewSetupModel()
 		m.host = "https://"
-		assert.Equal(t, "", m.hostGhostText())
+		assert.Empty(t, m.hostGhostText())
 	})
 
 	t.Run("empty when input equals suggestion", func(t *testing.T) {
 		m := NewSetupModel()
 		m.host = "gitlab.com"
-		assert.Equal(t, "", m.hostGhostText())
+		assert.Empty(t, m.hostGhostText())
 	})
 
 	t.Run("right arrow at end accepts suggestion", func(t *testing.T) {
@@ -378,6 +378,6 @@ func TestSetup_GhostText(t *testing.T) {
 
 		sm := asSetup(t, m)
 		assert.Equal(t, "gitlab.com", sm.Host())
-		assert.Equal(t, "", sm.hostGhostText())
+		assert.Empty(t, sm.hostGhostText())
 	})
 }

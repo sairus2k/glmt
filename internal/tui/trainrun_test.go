@@ -42,7 +42,7 @@ func sendTrainKey(m TrainRunModel, key string) (TrainRunModel, tea.Cmd) {
 func TestTrainRun_InitialState(t *testing.T) {
 	m := newTestTrainModel()
 
-	assert.Equal(t, 3, len(m.MRSteps()))
+	assert.Len(t, m.MRSteps(), 3)
 	assert.Equal(t, 0, m.CurrentMR())
 	assert.False(t, m.Done())
 	assert.False(t, m.Aborted())

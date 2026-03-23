@@ -153,11 +153,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m AppModel) contentHeight() int {
-	h := m.height - 5 // 3 header + 2 footer
-	if h < 1 {
-		h = 1
-	}
-	return h
+	return max(m.height-5, 1) // 3 header + 2 footer
 }
 
 func (m *AppModel) propagateContentHeight() {

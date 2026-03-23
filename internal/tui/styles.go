@@ -41,10 +41,7 @@ func renderFooter(hints []KeyHint, loginStatus string, width int) string {
 	leftLen := ansi.StringWidth(left)
 	rightLen := ansi.StringWidth(right)
 
-	gap := width - leftLen - rightLen
-	if gap < 2 {
-		gap = 2
-	}
+	gap := max(width-leftLen-rightLen, 2)
 	return left + strings.Repeat(" ", gap) + right
 }
 
@@ -56,10 +53,7 @@ func renderHeader(width int, version string) string {
 	leftLen := ansi.StringWidth(left)
 	rightLen := ansi.StringWidth(right)
 
-	gap := width - leftLen - rightLen
-	if gap < 2 {
-		gap = 2
-	}
+	gap := max(width-leftLen-rightLen, 2)
 	return left + strings.Repeat(" ", gap) + right
 }
 

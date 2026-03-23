@@ -141,9 +141,9 @@ func TestMergeMergeRequest_Success(t *testing.T) {
 		assert.Equal(t, http.MethodPut, r.Method)
 		assert.Equal(t, "/api/v4/projects/1/merge_requests/10/merge", r.URL.Path)
 
-		var body map[string]interface{}
+		var body map[string]any
 		err := json.NewDecoder(r.Body).Decode(&body)
-		require.NoError(t, err)
+		assert.NoError(t, err) //nolint:testifylint // require not safe in http handler goroutine
 		assert.Equal(t, "abc123", body["sha"])
 
 		w.Header().Set("Content-Type", "application/json")
@@ -171,7 +171,7 @@ func TestMergeMergeRequest_SHAMismatch(t *testing.T) {
 	client := newTestClient(t, server)
 	mergeCommitSHA, err := client.MergeMergeRequest(context.Background(), 1, 10, "wrong-sha")
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrSHAMismatch)
+	require.ErrorIs(t, err, ErrSHAMismatch)
 	assert.Empty(t, mergeCommitSHA)
 }
 
@@ -185,7 +185,7 @@ func TestMergeMergeRequest_NotMergeable(t *testing.T) {
 	client := newTestClient(t, server)
 	mergeCommitSHA, err := client.MergeMergeRequest(context.Background(), 1, 10, "abc123")
 	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrNotMergeable)
+	require.ErrorIs(t, err, ErrNotMergeable)
 	assert.Empty(t, mergeCommitSHA)
 }
 
@@ -403,7 +403,7 @@ func TestListMergeRequestsFull(t *testing.T) {
 	assert.Equal(t, "bob", mrs[1].Author)
 	assert.True(t, mrs[1].Draft)
 	assert.Equal(t, 1, mrs[1].CommitCount)
-	assert.Equal(t, "", mrs[1].HeadPipelineStatus) // null pipeline
+	assert.Empty(t, mrs[1].HeadPipelineStatus) // null pipeline
 	assert.Equal(t, "checking", mrs[1].DetailedMergeStatus)
 }
 

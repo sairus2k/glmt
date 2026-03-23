@@ -127,7 +127,7 @@ func TestRunnerRun(t *testing.T) {
 				m.MergeMergeRequestFn = func(_ context.Context, _ int, _ int, _ string) (string, error) {
 					mergeCallCount++
 					if mergeCallCount == 1 {
-						return "", ErrSHAMismatch
+						return "", gitlab.ErrSHAMismatch
 					}
 					return "merge-commit-sha", nil
 				}
@@ -171,7 +171,7 @@ func TestRunnerRun(t *testing.T) {
 				}
 				// Always return SHA mismatch
 				m.MergeMergeRequestFn = func(_ context.Context, _ int, _ int, _ string) (string, error) {
-					return "", ErrSHAMismatch
+					return "", gitlab.ErrSHAMismatch
 				}
 			},
 			assertResult: func(t *testing.T, result *Result) {

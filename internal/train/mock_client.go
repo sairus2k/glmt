@@ -10,7 +10,7 @@ import (
 // MockCall records a single method call made to the MockClient.
 type MockCall struct {
 	Method string
-	Args   []interface{}
+	Args   []any
 }
 
 // MockClient is a hand-written mock for gitlab.Client used in tests.
@@ -30,7 +30,7 @@ type MockClient struct {
 	RetryPipelineFn           func(ctx context.Context, projectID, pipelineID int) (*gitlab.Pipeline, error)
 }
 
-func (m *MockClient) record(method string, args ...interface{}) {
+func (m *MockClient) record(method string, args ...any) {
 	m.Calls = append(m.Calls, MockCall{Method: method, Args: args})
 }
 

@@ -35,11 +35,6 @@ type Result struct {
 // Logger is a callback for the train to report progress.
 type Logger func(mrIID int, step string, message string)
 
-// ErrSHAMismatch is returned when a merge fails due to SHA mismatch (409).
-//
-// Deprecated: use gitlab.ErrSHAMismatch directly.
-var ErrSHAMismatch = gitlab.ErrSHAMismatch
-
 // Runner executes the merge train.
 type Runner struct {
 	client    gitlab.Client
@@ -180,7 +175,7 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 		if ctx.Err() != nil {
 			return MRStatusPending, "", ""
 		}
-		if errors.Is(mergeErr, ErrSHAMismatch) {
+		if errors.Is(mergeErr, gitlab.ErrSHAMismatch) {
 			if isRetry {
 				// Second SHA mismatch — skip
 				r.log(mr.IID, "skip", "SHA mismatch on retry, skipping")
@@ -284,7 +279,7 @@ func (r *Runner) findCancellablePipeline(ctx context.Context, ref, sha string) (
 			return pipelines[0], nil
 		}
 	}
-	return nil, nil
+	return nil, nil //nolint:nilnil // nil pipeline with no error means "not found"
 }
 
 func (r *Runner) waitForMergeReady(ctx context.Context, mrIID int) (*gitlab.MergeRequest, error) {
@@ -318,7 +313,7 @@ func (r *Runner) waitForMergeReady(ctx context.Context, mrIID int) (*gitlab.Merg
 
 func (r *Runner) waitForMainPipeline(ctx context.Context, targetBranch, sha string) (*gitlab.Pipeline, error) {
 	pipelineFound := false
-	for attempt := 0; attempt < r.MaxMainPipelineAttempts; attempt++ {
+	for range r.MaxMainPipelineAttempts {
 		pipelines, err := r.client.ListPipelines(ctx, r.projectID, targetBranch, "", sha)
 		if err != nil {
 			return nil, err

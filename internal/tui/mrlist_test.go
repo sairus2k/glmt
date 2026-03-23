@@ -348,7 +348,7 @@ func TestMRList_CurrentMRURL(t *testing.T) {
 	assert.Equal(t, m.Ineligible()[0].MR.WebURL, m.currentMRURL())
 
 	// Move cursor past all items — should return empty.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		m = sendKey(m, "j")
 	}
 	// Cursor is clamped to last item, so URL should still be valid.
@@ -357,7 +357,7 @@ func TestMRList_CurrentMRURL(t *testing.T) {
 
 func TestMRList_CurrentMRURL_Empty(t *testing.T) {
 	m := loadModel(nil)
-	assert.Equal(t, "", m.currentMRURL())
+	assert.Empty(t, m.currentMRURL())
 }
 
 func TestMRList_ViewShowsSelectionCount(t *testing.T) {

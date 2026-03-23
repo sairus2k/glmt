@@ -86,13 +86,13 @@ func TestFileLogger_WritesJSONLines(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(lines[1]), &meta))
 	assert.Equal(t, "meta", meta["level"])
 	assert.Equal(t, "train started", meta["msg"])
-	assert.Equal(t, float64(123), meta["project_id"])
+	assert.InDelta(t, float64(123), meta["project_id"], 0)
 
 	// Step line
 	var step map[string]any
 	require.NoError(t, json.Unmarshal([]byte(lines[2]), &step))
 	assert.Equal(t, "info", step["level"])
-	assert.Equal(t, float64(42), step["mr"])
+	assert.InDelta(t, float64(42), step["mr"], 0)
 	assert.Equal(t, "rebase_wait", step["step"])
 
 	// Token scrubbed in step
@@ -106,8 +106,8 @@ func TestFileLogger_WritesJSONLines(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(lines[4]), &end))
 	assert.Equal(t, "meta", end["level"])
 	assert.Equal(t, "train finished", end["msg"])
-	assert.Equal(t, float64(1), end["merged"])
-	assert.Equal(t, float64(300000), end["duration_ms"])
+	assert.InDelta(t, float64(1), end["merged"], 0)
+	assert.InDelta(t, float64(300000), end["duration_ms"], 0)
 }
 
 func TestLogStep_WriteError_Swallowed(t *testing.T) {
@@ -151,7 +151,7 @@ func TestFileLogger_LogAPI(t *testing.T) {
 	api1 := entry1["api"].(map[string]any)
 	assert.Equal(t, "RebaseMergeRequest", api1["method"])
 	assert.Equal(t, true, api1["ok"])
-	assert.Equal(t, float64(340), api1["duration_ms"])
+	assert.InDelta(t, float64(340), api1["duration_ms"], 0)
 
 	var entry2 map[string]any
 	require.NoError(t, json.Unmarshal([]byte(lines[1]), &entry2))
