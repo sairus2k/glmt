@@ -65,6 +65,7 @@ repo = "myteam/myrepo"          # last-used project path
 [behavior]
 poll_rebase_interval_s = 2      # how often to check rebase status
 poll_pipeline_interval_s = 10   # how often to check pipeline status
+main_pipeline_timeout_m = 20    # how long to wait for the main pipeline to finish (minutes)
 ```
 
 ## How it works

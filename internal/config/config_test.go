@@ -15,6 +15,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Behavior.PollPipelineIntervalS != 10 {
 		t.Errorf("PollPipelineIntervalS = %d, want 10", cfg.Behavior.PollPipelineIntervalS)
 	}
+	if cfg.Behavior.MainPipelineTimeoutM != 20 {
+		t.Errorf("MainPipelineTimeoutM = %d, want 20", cfg.Behavior.MainPipelineTimeoutM)
+	}
 	if cfg.GitLab.Host != "" {
 		t.Errorf("Host = %q, want empty", cfg.GitLab.Host)
 	}
@@ -57,6 +60,7 @@ func TestSaveAndLoad(t *testing.T) {
 		Behavior: BehaviorConfig{
 			PollRebaseIntervalS:   5,
 			PollPipelineIntervalS: 20,
+			MainPipelineTimeoutM:  30,
 		},
 	}
 
@@ -86,6 +90,9 @@ func TestSaveAndLoad(t *testing.T) {
 	}
 	if loaded.Behavior.PollPipelineIntervalS != original.Behavior.PollPipelineIntervalS {
 		t.Errorf("PollPipelineIntervalS = %d, want %d", loaded.Behavior.PollPipelineIntervalS, original.Behavior.PollPipelineIntervalS)
+	}
+	if loaded.Behavior.MainPipelineTimeoutM != original.Behavior.MainPipelineTimeoutM {
+		t.Errorf("MainPipelineTimeoutM = %d, want %d", loaded.Behavior.MainPipelineTimeoutM, original.Behavior.MainPipelineTimeoutM)
 	}
 }
 
@@ -117,6 +124,9 @@ func TestLoadPartial(t *testing.T) {
 	}
 	if loaded.Behavior.PollPipelineIntervalS != 10 {
 		t.Errorf("PollPipelineIntervalS = %d, want 10", loaded.Behavior.PollPipelineIntervalS)
+	}
+	if loaded.Behavior.MainPipelineTimeoutM != 20 {
+		t.Errorf("MainPipelineTimeoutM = %d, want 20", loaded.Behavior.MainPipelineTimeoutM)
 	}
 }
 

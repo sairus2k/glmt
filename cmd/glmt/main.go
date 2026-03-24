@@ -48,18 +48,18 @@ func run() error {
 }
 
 func runNonInteractive(host, token string, projectID int, mrsFlag string, enableLog bool) error {
+	cfgPath := configPath()
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		cfg = config.DefaultConfig()
+	}
+
 	// Fall back to saved config for host/token if not provided via flags
-	if host == "" || token == "" {
-		cfgPath := configPath()
-		cfg, err := config.Load(cfgPath)
-		if err == nil {
-			if host == "" {
-				host = cfg.GitLab.Host
-			}
-			if token == "" {
-				token = cfg.GitLab.Token
-			}
-		}
+	if host == "" {
+		host = cfg.GitLab.Host
+	}
+	if token == "" {
+		token = cfg.GitLab.Token
 	}
 
 	// Validate required flags
@@ -154,6 +154,9 @@ func runNonInteractive(host, token string, projectID int, mrsFlag string, enable
 
 	trainStart := time.Now()
 	runner := train.NewRunner(apiClient, projectID, logger)
+	runner.PollRebaseInterval = time.Duration(cfg.Behavior.PollRebaseIntervalS) * time.Second
+	runner.PollPipelineInterval = time.Duration(cfg.Behavior.PollPipelineIntervalS) * time.Second
+	runner.MaxMainPipelineAttempts = cfg.Behavior.MainPipelineTimeoutM * 60 / cfg.Behavior.PollPipelineIntervalS
 	result, err := runner.Run(ctx, mrs)
 
 	// Log run end (before error check — partial results are still logged)

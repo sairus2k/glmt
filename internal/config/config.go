@@ -30,6 +30,7 @@ type DefaultsConfig struct {
 type BehaviorConfig struct {
 	PollRebaseIntervalS   int `toml:"poll_rebase_interval_s"`
 	PollPipelineIntervalS int `toml:"poll_pipeline_interval_s"`
+	MainPipelineTimeoutM  int `toml:"main_pipeline_timeout_m"`
 }
 
 // DefaultConfig returns the config with sensible defaults.
@@ -38,6 +39,7 @@ func DefaultConfig() *Config {
 		Behavior: BehaviorConfig{
 			PollRebaseIntervalS:   2,
 			PollPipelineIntervalS: 10,
+			MainPipelineTimeoutM:  20,
 		},
 	}
 }
