@@ -33,6 +33,12 @@ type IneligibleMR struct {
 	Reason string // "draft", "pipeline failed", "pipeline running", "conflicts", "unresolved threads"
 }
 
+// Reason constants for ineligible MRs.
+const (
+	reasonPipelineRunning   = "pipeline running"
+	reasonUnresolvedThreads = "unresolved threads"
+)
+
 // Messages
 
 type mrsLoadedMsg struct {
@@ -70,7 +76,7 @@ func classifyMR(mr *gitlab.MergeRequest) (eligible bool, reason string) {
 		return false, "draft"
 	}
 	if mr.HeadPipelineStatus == "running" || mr.HeadPipelineStatus == "pending" {
-		return false, "pipeline running"
+		return false, reasonPipelineRunning
 	}
 	if mr.HeadPipelineStatus != "success" && mr.HeadPipelineStatus != "skipped" {
 		return false, "pipeline failed"
@@ -79,7 +85,7 @@ func classifyMR(mr *gitlab.MergeRequest) (eligible bool, reason string) {
 	case "mergeable", "need_rebase", "not_approved":
 		// mergeable: ready; need_rebase: train handles rebase; not_approved: GitLab Free can't enforce approvals
 	case "discussions_not_resolved":
-		return false, "unresolved threads"
+		return false, reasonUnresolvedThreads
 	case "blocked_status":
 		return false, "blocked"
 	case "requested_changes":
@@ -90,7 +96,7 @@ func classifyMR(mr *gitlab.MergeRequest) (eligible bool, reason string) {
 		return false, mr.DetailedMergeStatus
 	}
 	if !mr.BlockingDiscussionsResolved {
-		return false, "unresolved threads"
+		return false, reasonUnresolvedThreads
 	}
 	return true, ""
 }
@@ -100,11 +106,11 @@ func ineligibleIcon(reason string, spinnerFrame int) string {
 	switch reason {
 	case "pipeline failed", "blocked":
 		return sError.Styled("\u2717")
-	case "pipeline running", "checking", "unchecked":
+	case reasonPipelineRunning, "checking", "unchecked":
 		return sRunning.Styled(spinnerFrames[spinnerFrame])
 	case "draft":
 		return sFaint.Styled("\u270E")
-	case "unresolved threads":
+	case reasonUnresolvedThreads:
 		return sWarning.Styled("\u25C7")
 	case "requested changes":
 		return sWarning.Styled("\u21BB")
@@ -240,7 +246,7 @@ func (m MRListModel) hasUncheckedMRs() bool {
 // hasRunningPipelines returns true if any ineligible MR has "pipeline running" status.
 func (m MRListModel) hasRunningPipelines() bool {
 	for _, imr := range m.ineligible {
-		if imr.Reason == "pipeline running" {
+		if imr.Reason == reasonPipelineRunning {
 			return true
 		}
 	}
@@ -508,6 +514,98 @@ func truncateText(s string, width int) string {
 	return s
 }
 
+// displayItem is a rendered row with its line count for scroll accounting.
+type displayItem struct {
+	text  string
+	lines int
+}
+
+// renderEligibleRow renders a single eligible MR row.
+func (m MRListModel) renderEligibleRow(mr *gitlab.MergeRequest, idx int, lay tableLayout) displayItem {
+	var lb strings.Builder
+	if idx == m.cursor {
+		lb.WriteString(sCursor.Styled(">"))
+	} else {
+		lb.WriteString(" ")
+	}
+	lb.WriteString(" ")
+	if m.selected[mr.IID] {
+		lb.WriteString(sSelected.Styled("\u25cf"))
+	} else {
+		lb.WriteString(sFaint.Styled("\u25cb"))
+	}
+	lb.WriteString(" ")
+	lb.WriteString(padLeft(sBold.Styled(fmt.Sprintf("!%d", mr.IID)), lay.maxIID))
+	lb.WriteString("  ")
+
+	first, second := wrapTitle(mr.Title, lay.titleWidth)
+	lb.WriteString(padRight(first, lay.titleWidth))
+	lb.WriteString("  ")
+
+	lb.WriteString(padLeft(sFaint.Styled("@"+mr.Author), lay.maxAuthor))
+	lb.WriteString("  ")
+	lb.WriteString(padLeft(sFaint.Styled(fmt.Sprintf("%d commits", mr.CommitCount)), lay.maxCommits))
+
+	if lay.maxApprovals > 0 {
+		lb.WriteString("  ")
+		if mr.ApprovalCount > 0 {
+			lb.WriteString(padLeft(sSuccess.Styled(fmt.Sprintf("✓ %d", mr.ApprovalCount)), lay.maxApprovals))
+		} else {
+			lb.WriteString(strings.Repeat(" ", lay.maxApprovals))
+		}
+	}
+	lineCount := 1
+	if second != "" {
+		second = truncateText(second, lay.titleWidth)
+		lb.WriteString("\n")
+		lb.WriteString(strings.Repeat(" ", 4+lay.maxIID+2))
+		lb.WriteString(padRight(second, lay.titleWidth))
+		lineCount = 2
+	}
+	return displayItem{text: lb.String(), lines: lineCount}
+}
+
+// renderIneligibleRow renders a single ineligible MR row.
+func (m MRListModel) renderIneligibleRow(imr IneligibleMR, idx int, lay tableLayout) displayItem {
+	var lb strings.Builder
+	if idx == m.cursor {
+		lb.WriteString(sCursor.Styled(">"))
+	} else {
+		lb.WriteString(" ")
+	}
+	lb.WriteString(" ")
+	lb.WriteString(ineligibleIcon(imr.Reason, m.spinnerFrame))
+	lb.WriteString(" ")
+	lb.WriteString(padLeft(sDim.Styled(fmt.Sprintf("!%d", imr.MR.IID)), lay.maxIID))
+	lb.WriteString("  ")
+
+	first, second := wrapTitle(imr.MR.Title, lay.titleWidth)
+	lb.WriteString(padRight(sDim.Styled(first), lay.titleWidth))
+	lb.WriteString("  ")
+
+	lb.WriteString(padLeft(sDim.Styled("@"+imr.MR.Author), lay.maxAuthor))
+	lb.WriteString("  ")
+	lb.WriteString(padLeft(sDim.Styled(fmt.Sprintf("%d commits", imr.MR.CommitCount)), lay.maxCommits))
+
+	if lay.maxApprovals > 0 {
+		lb.WriteString("  ")
+		if imr.MR.ApprovalCount > 0 {
+			lb.WriteString(padLeft(sDim.Styled(fmt.Sprintf("✓ %d", imr.MR.ApprovalCount)), lay.maxApprovals))
+		} else {
+			lb.WriteString(strings.Repeat(" ", lay.maxApprovals))
+		}
+	}
+	lineCount := 1
+	if second != "" {
+		second = truncateText(second, lay.titleWidth)
+		lb.WriteString("\n")
+		lb.WriteString(strings.Repeat(" ", 4+lay.maxIID+2))
+		lb.WriteString(padRight(sDim.Styled(second), lay.titleWidth))
+		lineCount = 2
+	}
+	return displayItem{text: lb.String(), lines: lineCount}
+}
+
 // View renders the MR list screen.
 func (m MRListModel) View() tea.View {
 	var b strings.Builder
@@ -554,54 +652,10 @@ func (m MRListModel) View() tea.View {
 	lay := m.computeLayout()
 
 	// Build display items with line counts for scroll accounting.
-	type displayItem struct {
-		text  string
-		lines int
-	}
 	var items []displayItem
 
 	for i, mr := range m.eligible {
-		var lb strings.Builder
-		if i == m.cursor {
-			lb.WriteString(sCursor.Styled(">"))
-		} else {
-			lb.WriteString(" ")
-		}
-		lb.WriteString(" ")
-		if m.selected[mr.IID] {
-			lb.WriteString(sSelected.Styled("\u25cf"))
-		} else {
-			lb.WriteString(sFaint.Styled("\u25cb"))
-		}
-		lb.WriteString(" ")
-		lb.WriteString(padLeft(sBold.Styled(fmt.Sprintf("!%d", mr.IID)), lay.maxIID))
-		lb.WriteString("  ")
-
-		first, second := wrapTitle(mr.Title, lay.titleWidth)
-		lb.WriteString(padRight(first, lay.titleWidth))
-		lb.WriteString("  ")
-
-		lb.WriteString(padLeft(sFaint.Styled("@"+mr.Author), lay.maxAuthor))
-		lb.WriteString("  ")
-		lb.WriteString(padLeft(sFaint.Styled(fmt.Sprintf("%d commits", mr.CommitCount)), lay.maxCommits))
-
-		if lay.maxApprovals > 0 {
-			lb.WriteString("  ")
-			if mr.ApprovalCount > 0 {
-				lb.WriteString(padLeft(sSuccess.Styled(fmt.Sprintf("✓ %d", mr.ApprovalCount)), lay.maxApprovals))
-			} else {
-				lb.WriteString(strings.Repeat(" ", lay.maxApprovals))
-			}
-		}
-		lineCount := 1
-		if second != "" {
-			second = truncateText(second, lay.titleWidth)
-			lb.WriteString("\n")
-			lb.WriteString(strings.Repeat(" ", 4+lay.maxIID+2))
-			lb.WriteString(padRight(second, lay.titleWidth))
-			lineCount = 2
-		}
-		items = append(items, displayItem{text: lb.String(), lines: lineCount})
+		items = append(items, m.renderEligibleRow(mr, i, lay))
 	}
 
 	// Separator between eligible and ineligible.
@@ -610,44 +664,7 @@ func (m MRListModel) View() tea.View {
 	}
 
 	for i, imr := range m.ineligible {
-		var lb strings.Builder
-		idx := len(m.eligible) + i
-		if idx == m.cursor {
-			lb.WriteString(sCursor.Styled(">"))
-		} else {
-			lb.WriteString(" ")
-		}
-		lb.WriteString(" ")
-		lb.WriteString(ineligibleIcon(imr.Reason, m.spinnerFrame))
-		lb.WriteString(" ")
-		lb.WriteString(padLeft(sDim.Styled(fmt.Sprintf("!%d", imr.MR.IID)), lay.maxIID))
-		lb.WriteString("  ")
-
-		first, second := wrapTitle(imr.MR.Title, lay.titleWidth)
-		lb.WriteString(padRight(sDim.Styled(first), lay.titleWidth))
-		lb.WriteString("  ")
-
-		lb.WriteString(padLeft(sDim.Styled("@"+imr.MR.Author), lay.maxAuthor))
-		lb.WriteString("  ")
-		lb.WriteString(padLeft(sDim.Styled(fmt.Sprintf("%d commits", imr.MR.CommitCount)), lay.maxCommits))
-
-		if lay.maxApprovals > 0 {
-			lb.WriteString("  ")
-			if imr.MR.ApprovalCount > 0 {
-				lb.WriteString(padLeft(sDim.Styled(fmt.Sprintf("✓ %d", imr.MR.ApprovalCount)), lay.maxApprovals))
-			} else {
-				lb.WriteString(strings.Repeat(" ", lay.maxApprovals))
-			}
-		}
-		lineCount := 1
-		if second != "" {
-			second = truncateText(second, lay.titleWidth)
-			lb.WriteString("\n")
-			lb.WriteString(strings.Repeat(" ", 4+lay.maxIID+2))
-			lb.WriteString(padRight(sDim.Styled(second), lay.titleWidth))
-			lineCount = 2
-		}
-		items = append(items, displayItem{text: lb.String(), lines: lineCount})
+		items = append(items, m.renderIneligibleRow(imr, len(m.eligible)+i, lay))
 	}
 
 	// Render visible window (line-based).
@@ -694,18 +711,8 @@ func (m MRListModel) visibleItems() int {
 	return max(m.contentHeight-mrListHeaderLines, 1)
 }
 
-// adjustScroll adjusts scrollOffset to keep the cursor visible,
-// accounting for multi-line items (wrapped titles).
-func (m *MRListModel) adjustScroll() {
-	if m.totalCount() == 0 {
-		return
-	}
-
-	available := m.visibleItems()
-	lay := m.computeLayout()
-	hasSep := len(m.ineligible) > 0 && len(m.eligible) > 0
-
-	// Build line counts per display item (same order as View).
+// computeItemLineHeights returns the line count for each display item (same order as View).
+func (m MRListModel) computeItemLineHeights(lay tableLayout, hasSep bool) []int {
 	var itemLines []int
 	for _, mr := range m.eligible {
 		_, second := wrapTitle(mr.Title, lay.titleWidth)
@@ -726,6 +733,21 @@ func (m *MRListModel) adjustScroll() {
 			itemLines = append(itemLines, 1)
 		}
 	}
+	return itemLines
+}
+
+// adjustScroll adjusts scrollOffset to keep the cursor visible,
+// accounting for multi-line items (wrapped titles).
+func (m *MRListModel) adjustScroll() {
+	if m.totalCount() == 0 {
+		return
+	}
+
+	available := m.visibleItems()
+	lay := m.computeLayout()
+	hasSep := len(m.ineligible) > 0 && len(m.eligible) > 0
+
+	itemLines := m.computeItemLineHeights(lay, hasSep)
 
 	// Map cursor (MR index) to display items index.
 	cursorIdx := m.cursor

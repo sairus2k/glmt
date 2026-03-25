@@ -12,6 +12,8 @@ import (
 	goGitLab "gitlab.com/gitlab-org/api/client-go/v2"
 )
 
+const mergingMRFmt = "merging MR %d: %w"
+
 // APIClient implements the Client interface using the go-gitlab library.
 type APIClient struct {
 	client             *goGitLab.Client
@@ -153,13 +155,13 @@ func (c *APIClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int,
 		var errResp *goGitLab.ErrorResponse
 		if errors.As(err, &errResp) && errResp.Response != nil {
 			if errResp.Response.StatusCode == 409 {
-				return "", fmt.Errorf("merging MR %d: %w", mrIID, ErrSHAMismatch)
+				return "", fmt.Errorf(mergingMRFmt, mrIID, ErrSHAMismatch)
 			}
 			if errResp.Response.StatusCode == 405 {
-				return "", fmt.Errorf("merging MR %d: %w", mrIID, ErrNotMergeable)
+				return "", fmt.Errorf(mergingMRFmt, mrIID, ErrNotMergeable)
 			}
 		}
-		return "", fmt.Errorf("merging MR %d: %w", mrIID, err)
+		return "", fmt.Errorf(mergingMRFmt, mrIID, err)
 	}
 	return mr.MergeCommitSHA, nil
 }
@@ -236,6 +238,71 @@ func (g *graphQLStringInt) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// graphQLNode represents a single MR node in a GraphQL response.
+type graphQLNode struct {
+	IID         graphQLStringInt `json:"iid"`
+	Title       string           `json:"title"`
+	Draft       bool             `json:"draft"`
+	CommitCount int              `json:"commitCount"`
+	Author      *struct {
+		Username string `json:"username"`
+	} `json:"author"`
+	SourceBranch string `json:"sourceBranch"`
+	TargetBranch string `json:"targetBranch"`
+	DiffHeadSha  string `json:"diffHeadSha"`
+	CreatedAt    string `json:"createdAt"`
+	ApprovedBy   struct {
+		Nodes []struct {
+			Username string `json:"username"`
+		} `json:"nodes"`
+	} `json:"approvedBy"`
+	HeadPipeline *struct {
+		Status string `json:"status"`
+	} `json:"headPipeline"`
+	DetailedMergeStatus string `json:"detailedMergeStatus"`
+	WebURL              string `json:"webUrl"`
+}
+
+// graphQLMRResponse is the typed response for the ListMergeRequestsFull GraphQL query.
+type graphQLMRResponse struct {
+	Data *struct {
+		Project *struct {
+			MergeRequests struct {
+				PageInfo goGitLab.PageInfo `json:"pageInfo"`
+				Nodes    []graphQLNode     `json:"nodes"`
+			} `json:"mergeRequests"`
+		} `json:"project"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+// convertGraphQLNode converts a GraphQL MR node to a domain MergeRequest.
+func convertGraphQLNode(n graphQLNode) *MergeRequest {
+	mr := &MergeRequest{
+		IID:                         int(n.IID),
+		Title:                       n.Title,
+		Draft:                       n.Draft,
+		CommitCount:                 n.CommitCount,
+		SourceBranch:                n.SourceBranch,
+		TargetBranch:                n.TargetBranch,
+		SHA:                         n.DiffHeadSha,
+		CreatedAt:                   n.CreatedAt,
+		DetailedMergeStatus:         strings.ToLower(n.DetailedMergeStatus),
+		BlockingDiscussionsResolved: true, // not available in GraphQL; safe default
+		WebURL:                      n.WebURL,
+	}
+	if n.Author != nil {
+		mr.Author = n.Author.Username
+	}
+	mr.ApprovalCount = len(n.ApprovedBy.Nodes)
+	if n.HeadPipeline != nil {
+		mr.HeadPipelineStatus = strings.ToLower(n.HeadPipeline.Status)
+	}
+	return mr
+}
+
 // ListMergeRequestsFull fetches open merge requests with all fields via GraphQL.
 func (c *APIClient) ListMergeRequestsFull(ctx context.Context, projectPath string) ([]*MergeRequest, error) {
 	const query = `query($projectPath: ID!, $after: String) {
@@ -255,44 +322,6 @@ func (c *APIClient) ListMergeRequestsFull(ctx context.Context, projectPath strin
 		}
 	}`
 
-	type graphQLNode struct {
-		IID         graphQLStringInt `json:"iid"`
-		Title       string           `json:"title"`
-		Draft       bool             `json:"draft"`
-		CommitCount int              `json:"commitCount"`
-		Author      *struct {
-			Username string `json:"username"`
-		} `json:"author"`
-		SourceBranch string `json:"sourceBranch"`
-		TargetBranch string `json:"targetBranch"`
-		DiffHeadSha  string `json:"diffHeadSha"`
-		CreatedAt    string `json:"createdAt"`
-		ApprovedBy   struct {
-			Nodes []struct {
-				Username string `json:"username"`
-			} `json:"nodes"`
-		} `json:"approvedBy"`
-		HeadPipeline *struct {
-			Status string `json:"status"`
-		} `json:"headPipeline"`
-		DetailedMergeStatus string `json:"detailedMergeStatus"`
-		WebURL              string `json:"webUrl"`
-	}
-
-	type graphQLResponse struct {
-		Data *struct {
-			Project *struct {
-				MergeRequests struct {
-					PageInfo goGitLab.PageInfo `json:"pageInfo"`
-					Nodes    []graphQLNode     `json:"nodes"`
-				} `json:"mergeRequests"`
-			} `json:"project"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-
 	var all []*MergeRequest
 	var after *string
 
@@ -302,7 +331,7 @@ func (c *APIClient) ListMergeRequestsFull(ctx context.Context, projectPath strin
 			vars["after"] = *after
 		}
 
-		var resp graphQLResponse
+		var resp graphQLMRResponse
 
 		_, err := c.client.GraphQL.Do(goGitLab.GraphQLQuery{
 			Query:     query,
@@ -326,27 +355,7 @@ func (c *APIClient) ListMergeRequestsFull(ctx context.Context, projectPath strin
 
 		conn := resp.Data.Project.MergeRequests
 		for _, n := range conn.Nodes {
-			mr := &MergeRequest{
-				IID:                         int(n.IID),
-				Title:                       n.Title,
-				Draft:                       n.Draft,
-				CommitCount:                 n.CommitCount,
-				SourceBranch:                n.SourceBranch,
-				TargetBranch:                n.TargetBranch,
-				SHA:                         n.DiffHeadSha,
-				CreatedAt:                   n.CreatedAt,
-				DetailedMergeStatus:         strings.ToLower(n.DetailedMergeStatus),
-				BlockingDiscussionsResolved: true, // not available in GraphQL; safe default
-				WebURL:                      n.WebURL,
-			}
-			if n.Author != nil {
-				mr.Author = n.Author.Username
-			}
-			mr.ApprovalCount = len(n.ApprovedBy.Nodes)
-			if n.HeadPipeline != nil {
-				mr.HeadPipelineStatus = strings.ToLower(n.HeadPipeline.Status)
-			}
-			all = append(all, mr)
+			all = append(all, convertGraphQLNode(n))
 		}
 
 		if !conn.PageInfo.HasNextPage {

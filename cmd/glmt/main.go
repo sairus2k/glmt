@@ -85,22 +85,9 @@ func runNonInteractive(host, token string, projectID int, mrsFlag string, enable
 		return fmt.Errorf("non-interactive mode requires flags: %s", strings.Join(missing, ", "))
 	}
 
-	// Parse MR IIDs
-	parts := strings.Split(mrsFlag, ",")
-	mrIIDs := make([]int, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		iid, err := strconv.Atoi(p)
-		if err != nil {
-			return fmt.Errorf("invalid MR IID %q: %w", p, err)
-		}
-		mrIIDs = append(mrIIDs, iid)
-	}
-	if len(mrIIDs) == 0 {
-		return fmt.Errorf("no valid MR IIDs provided")
+	mrIIDs, err := parseMRIIDs(mrsFlag)
+	if err != nil {
+		return err
 	}
 
 	// Create GitLab client
@@ -110,18 +97,12 @@ func runNonInteractive(host, token string, projectID int, mrsFlag string, enable
 	}
 
 	// Set up file logging — wraps client BEFORE any API calls
-	var fileLogger *glmtlog.FileLogger
+	fileLogger := setupFileLogger(enableLog, token)
 	var apiClient gitlab.Client = client
-	if enableLog {
-		fl, err := glmtlog.NewFileLogger(glmtlog.DefaultStateDir(), token)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not create log file: %v\n", err)
-		} else {
-			fileLogger = fl
-			defer fileLogger.Close()
-			fileLogger.LogSession()
-			apiClient = glmtlog.NewLoggingClient(client, fileLogger)
-		}
+	if fileLogger != nil {
+		defer fileLogger.Close()
+		fileLogger.LogSession()
+		apiClient = glmtlog.NewLoggingClient(client, fileLogger)
 	}
 
 	ctx := context.Background()
@@ -137,20 +118,7 @@ func runNonInteractive(host, token string, projectID int, mrsFlag string, enable
 	}
 
 	// Create logger (composite if file logging enabled)
-	logger := func(mrIID int, step string, message string) {
-		if mrIID > 0 {
-			fmt.Printf("[MR !%d] [%s] %s\n", mrIID, step, message)
-		} else {
-			fmt.Printf("[%s] %s\n", step, message)
-		}
-	}
-	if fileLogger != nil {
-		origLogger := logger
-		logger = func(mrIID int, step string, message string) {
-			origLogger(mrIID, step, message)
-			fileLogger.LogStep(mrIID, step, message)
-		}
-	}
+	logger := buildLogFunc(fileLogger)
 
 	// Log train meta before run
 	if fileLogger != nil {
@@ -178,7 +146,64 @@ func runNonInteractive(host, token string, projectID int, mrsFlag string, enable
 		return fmt.Errorf("running train: %w", err)
 	}
 
-	// Print results
+	return printTrainResults(result)
+}
+
+// parseMRIIDs parses a comma-separated list of MR IIDs.
+func parseMRIIDs(mrsFlag string) ([]int, error) {
+	parts := strings.Split(mrsFlag, ",")
+	mrIIDs := make([]int, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		iid, err := strconv.Atoi(p)
+		if err != nil {
+			return nil, fmt.Errorf("invalid MR IID %q: %w", p, err)
+		}
+		mrIIDs = append(mrIIDs, iid)
+	}
+	if len(mrIIDs) == 0 {
+		return nil, fmt.Errorf("no valid MR IIDs provided")
+	}
+	return mrIIDs, nil
+}
+
+// setupFileLogger creates a file logger if enabled, printing a warning on failure.
+func setupFileLogger(enabled bool, token string) *glmtlog.FileLogger {
+	if !enabled {
+		return nil
+	}
+	fl, err := glmtlog.NewFileLogger(glmtlog.DefaultStateDir(), token)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not create log file: %v\n", err)
+		return nil
+	}
+	return fl
+}
+
+// buildLogFunc creates a train log function, optionally writing to a file logger.
+func buildLogFunc(fileLogger *glmtlog.FileLogger) func(int, string, string) {
+	logger := func(mrIID int, step string, message string) {
+		if mrIID > 0 {
+			fmt.Printf("[MR !%d] [%s] %s\n", mrIID, step, message)
+		} else {
+			fmt.Printf("[%s] %s\n", step, message)
+		}
+	}
+	if fileLogger != nil {
+		origLogger := logger
+		logger = func(mrIID int, step string, message string) {
+			origLogger(mrIID, step, message)
+			fileLogger.LogStep(mrIID, step, message)
+		}
+	}
+	return logger
+}
+
+// printTrainResults prints the train results and returns an error if not all MRs were merged.
+func printTrainResults(result *train.Result) error {
 	fmt.Println()
 	fmt.Println("=== Train Results ===")
 	allMerged := true
@@ -258,7 +283,39 @@ func runTUI(flagHost, flagToken string, flagProjectID int, enableLog bool) error
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	// Compute effective values without mutating saved config
+	creds := resolveCredentials(cfg, flagHost, flagToken)
+
+	// Set up file logging — wraps client BEFORE AppModel creation
+	var fileLogger *glmtlog.FileLogger
+	if enableLog && creds == nil {
+		fmt.Fprintf(os.Stderr, "Warning: --log requires pre-existing credentials (config or flags), logging disabled\n")
+	} else if enableLog {
+		fileLogger = setupFileLogger(true, creds.Token)
+		if fileLogger != nil {
+			defer fileLogger.Close()
+			fileLogger.LogSession()
+		}
+	}
+
+	// Start TUI
+	model := tui.NewAppModel(creds, cfg, cfgPath, flagProjectID, version)
+	model.FileLogger = fileLogger
+
+	// Wrap m.client in LoggingClient so ALL API calls are logged
+	if fileLogger != nil && model.Client() != nil {
+		model.SetClient(glmtlog.NewLoggingClient(model.Client(), fileLogger))
+	}
+
+	p := tea.NewProgram(model)
+	if _, err := p.Run(); err != nil {
+		return fmt.Errorf("running TUI: %w", err)
+	}
+
+	return nil
+}
+
+// resolveCredentials resolves credentials from glab config or CLI flags.
+func resolveCredentials(cfg *config.Config, flagHost, flagToken string) *auth.Credentials {
 	effectiveHost := cfg.GitLab.Host
 	effectiveToken := cfg.GitLab.Token
 	if flagHost != "" {
@@ -268,54 +325,22 @@ func runTUI(flagHost, flagToken string, flagProjectID int, enableLog bool) error
 		effectiveToken = flagToken
 	}
 
-	// Try to read existing credentials: glab config first, then glmt config
-	var creds *auth.Credentials
 	glabDir := auth.DefaultConfigDir()
 	c, err := auth.ReadCredentials(glabDir, effectiveHost)
 	if err == nil {
-		creds = c
 		// Persist glab-discovered host only (not CLI-provided host)
 		if flagHost == "" {
-			cfg.GitLab.Host = creds.Host
+			cfg.GitLab.Host = c.Host
 		}
-	} else if effectiveHost != "" && effectiveToken != "" {
-		creds = &auth.Credentials{
+		return c
+	}
+
+	if effectiveHost != "" && effectiveToken != "" {
+		return &auth.Credentials{
 			Host:     effectiveHost,
 			Token:    effectiveToken,
 			Protocol: "https",
 		}
-	}
-
-	// Set up file logging — wraps client BEFORE AppModel creation
-	var fileLogger *glmtlog.FileLogger
-	if enableLog {
-		if creds == nil {
-			fmt.Fprintf(os.Stderr, "Warning: --log requires pre-existing credentials (config or flags), logging disabled\n")
-		} else {
-			fl, err := glmtlog.NewFileLogger(glmtlog.DefaultStateDir(), creds.Token)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: could not create log file: %v\n", err)
-			} else {
-				fileLogger = fl
-				defer fileLogger.Close()
-				fileLogger.LogSession()
-			}
-		}
-	}
-
-	// Start TUI
-	model := tui.NewAppModel(creds, cfg, cfgPath, flagProjectID, version)
-	model.FileLogger = fileLogger
-
-	// Wrap m.client in LoggingClient so ALL API calls are logged
-	// (fetchCurrentUser, fetchProjects, fetchMRs, and train calls)
-	if fileLogger != nil && model.Client() != nil {
-		model.SetClient(glmtlog.NewLoggingClient(model.Client(), fileLogger))
-	}
-
-	p := tea.NewProgram(model)
-	if _, err := p.Run(); err != nil {
-		return fmt.Errorf("running TUI: %w", err)
 	}
 
 	return nil

@@ -66,80 +66,75 @@ func (m RepoPickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.PasteMsg:
-		m.search += msg.Content
-		m.filtered = filterProjects(m.projects, m.search)
-		if m.cursor >= len(m.filtered) && len(m.filtered) > 0 {
-			m.cursor = len(m.filtered) - 1
-		} else if len(m.filtered) == 0 {
-			m.cursor = 0
-		}
+		m.updateSearchAndClamp(m.search + msg.Content)
 		return m, nil
 
 	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
-
-		case "down":
-			if len(m.filtered) > 0 && m.cursor < len(m.filtered)-1 {
-				m.cursor++
-				m.adjustScroll()
-			}
-			return m, nil
-
-		case "up":
-			if m.cursor > 0 {
-				m.cursor--
-				m.adjustScroll()
-			}
-			return m, nil
-
-		case "enter":
-			if len(m.filtered) > 0 && m.cursor < len(m.filtered) {
-				m.selected = m.filtered[m.cursor]
-				return m, func() tea.Msg {
-					return repoSelectedMsg{project: m.selected}
-				}
-			}
-			return m, nil
-
-		case "esc":
-			if m.search == "" {
-				return m, tea.Quit
-			}
-			m.search = ""
-			m.filtered = filterProjects(m.projects, m.search)
-			m.cursor = 0
-			return m, nil
-
-		case "backspace":
-			if len(m.search) > 0 {
-				m.search = m.search[:len(m.search)-1]
-				m.filtered = filterProjects(m.projects, m.search)
-				if m.cursor >= len(m.filtered) && len(m.filtered) > 0 {
-					m.cursor = len(m.filtered) - 1
-				} else if len(m.filtered) == 0 {
-					m.cursor = 0
-				}
-			}
-			return m, nil
-
-		default:
-			text := msg.Key().Text
-			if text != "" {
-				m.search += text
-				m.filtered = filterProjects(m.projects, m.search)
-				if m.cursor >= len(m.filtered) && len(m.filtered) > 0 {
-					m.cursor = len(m.filtered) - 1
-				} else if len(m.filtered) == 0 {
-					m.cursor = 0
-				}
-			}
-			return m, nil
-		}
+		return m.handleKeyPress(msg)
 	}
 
 	return m, nil
+}
+
+// handleKeyPress handles keyboard input for the repo picker.
+func (m RepoPickerModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+
+	case "down":
+		if len(m.filtered) > 0 && m.cursor < len(m.filtered)-1 {
+			m.cursor++
+			m.adjustScroll()
+		}
+		return m, nil
+
+	case "up":
+		if m.cursor > 0 {
+			m.cursor--
+			m.adjustScroll()
+		}
+		return m, nil
+
+	case "enter":
+		if len(m.filtered) > 0 && m.cursor < len(m.filtered) {
+			m.selected = m.filtered[m.cursor]
+			return m, func() tea.Msg {
+				return repoSelectedMsg{project: m.selected}
+			}
+		}
+		return m, nil
+
+	case "esc":
+		if m.search == "" {
+			return m, tea.Quit
+		}
+		m.updateSearchAndClamp("")
+		return m, nil
+
+	case "backspace":
+		if len(m.search) > 0 {
+			m.updateSearchAndClamp(m.search[:len(m.search)-1])
+		}
+		return m, nil
+
+	default:
+		if text := msg.Key().Text; text != "" {
+			m.updateSearchAndClamp(m.search + text)
+		}
+		return m, nil
+	}
+}
+
+// updateSearchAndClamp updates the search string, re-filters, and clamps the cursor.
+func (m *RepoPickerModel) updateSearchAndClamp(search string) {
+	m.search = search
+	m.filtered = filterProjects(m.projects, m.search)
+	if m.cursor >= len(m.filtered) && len(m.filtered) > 0 {
+		m.cursor = len(m.filtered) - 1
+	} else if len(m.filtered) == 0 {
+		m.cursor = 0
+	}
 }
 
 // View renders the repo picker screen.

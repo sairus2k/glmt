@@ -148,28 +148,31 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 		return MRStatusSkipped, fmt.Sprintf("not mergeable: %v", err), ""
 	}
 
-	r.log(mr.IID, "merge", fmt.Sprintf("Merging with SHA guard (sha=%s)...", currentMR.SHA))
-	mergeCommitSHA, mergeErr := r.client.MergeMergeRequest(ctx, r.projectID, mr.IID, currentMR.SHA)
+	return r.performMerge(ctx, mr, currentMR.SHA, isRetry)
+}
+
+// performMerge executes the merge with SHA guard, handling SHA mismatch and 405 retries.
+func (r *Runner) performMerge(ctx context.Context, mr *gitlab.MergeRequest, sha string, isRetry bool) (MRStatus, string, string) {
+	r.log(mr.IID, "merge", fmt.Sprintf("Merging with SHA guard (sha=%s)...", sha))
+	mergeCommitSHA, mergeErr := r.client.MergeMergeRequest(ctx, r.projectID, mr.IID, sha)
 	if mergeErr != nil {
 		if ctx.Err() != nil {
 			return MRStatusPending, "", ""
 		}
 		if errors.Is(mergeErr, gitlab.ErrSHAMismatch) {
 			if isRetry {
-				// Second SHA mismatch — skip
 				r.log(mr.IID, "skip", "SHA mismatch on retry, skipping")
 				return MRStatusSkipped, "SHA mismatch on retry", ""
 			}
-			// First SHA mismatch — retry from step 1
 			r.log(mr.IID, "merge_sha_mismatch", "SHA mismatch, retrying from rebase...")
 			return r.processMRAttempt(ctx, mr, true)
 		}
 		if errors.Is(mergeErr, gitlab.ErrNotMergeable) {
-			sha, status, skipReason := r.retryMergeOn405(ctx, mr.IID)
+			retSHA, status, skipReason := r.retryMergeOn405(ctx, mr.IID)
 			if status != MRStatusMerged {
 				return status, skipReason, ""
 			}
-			mergeCommitSHA = sha
+			mergeCommitSHA = retSHA
 		} else {
 			r.log(mr.IID, "skip", fmt.Sprintf("Merge failed: %v", mergeErr))
 			return MRStatusSkipped, fmt.Sprintf("merge failed: %v", mergeErr), ""
@@ -179,7 +182,6 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 	if mergeCommitSHA == "" {
 		r.log(mr.IID, "merge", "Warning: GitLab did not return merge commit SHA, pipeline lookup may be imprecise")
 	}
-
 	return MRStatusMerged, "", mergeCommitSHA
 }
 

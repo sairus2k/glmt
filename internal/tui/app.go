@@ -506,19 +506,7 @@ func (m *AppModel) startTrain(mrs []*gitlab.MergeRequest) tea.Cmd {
 
 		// Log run end
 		if fileLogger != nil {
-			merged, skipped, pending := 0, 0, 0
-			if result != nil {
-				for _, mr := range result.MRResults {
-					switch mr.Status {
-					case train.MRStatusMerged:
-						merged++
-					case train.MRStatusSkipped:
-						skipped++
-					default:
-						pending++
-					}
-				}
-			}
+			merged, skipped, pending := countTrainResults(result)
 			pipelineStatus := ""
 			if result != nil {
 				pipelineStatus = result.MainPipelineStatus
@@ -540,6 +528,24 @@ func detectRepoFromGit() string {
 	}
 	url := strings.TrimSpace(string(out))
 	return extractProjectPath(url)
+}
+
+// countTrainResults counts merged, skipped, and pending MRs in a train result.
+func countTrainResults(result *train.Result) (merged, skipped, pending int) {
+	if result == nil {
+		return
+	}
+	for _, mr := range result.MRResults {
+		switch mr.Status {
+		case train.MRStatusMerged:
+			merged++
+		case train.MRStatusSkipped:
+			skipped++
+		default:
+			pending++
+		}
+	}
+	return
 }
 
 func extractProjectPath(url string) string {

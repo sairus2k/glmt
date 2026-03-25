@@ -9,6 +9,8 @@ import (
 	"github.com/sairus2k/glmt/internal/gitlab"
 )
 
+const rebasedSHAFmt = "rebased-sha-%d"
+
 // Client implements gitlab.Client with canned data and artificial delays
 // for recording demo GIFs with VHS.
 type Client struct {
@@ -139,7 +141,7 @@ func (c *Client) GetMergeRequest(_ context.Context, _ int, mrIID int) (*gitlab.M
 	return &gitlab.MergeRequest{
 		IID:                 mrIID,
 		State:               "opened",
-		SHA:                 fmt.Sprintf("rebased-sha-%d", mrIID),
+		SHA:                 fmt.Sprintf(rebasedSHAFmt, mrIID),
 		DetailedMergeStatus: status,
 		TargetBranch:        "main",
 	}, nil
@@ -149,7 +151,7 @@ func (c *Client) RebaseMergeRequest(_ context.Context, _ int, mrIID int) (*gitla
 	time.Sleep(1200 * time.Millisecond)
 	return &gitlab.MergeRequest{
 		IID:          mrIID,
-		SHA:          fmt.Sprintf("rebased-sha-%d", mrIID),
+		SHA:          fmt.Sprintf(rebasedSHAFmt, mrIID),
 		TargetBranch: "main",
 	}, nil
 }
@@ -163,7 +165,7 @@ func (c *Client) GetMergeRequestPipeline(_ context.Context, _ int, mrIID int) (*
 	return &gitlab.Pipeline{
 		ID:     mrIID*10 + 1,
 		Status: "success",
-		SHA:    fmt.Sprintf("rebased-sha-%d", mrIID),
+		SHA:    fmt.Sprintf(rebasedSHAFmt, mrIID),
 		WebURL: fmt.Sprintf("https://gitlab.example.com/team/backend-api/-/pipelines/%d", mrIID*10+1),
 	}, "mergeable", nil
 }

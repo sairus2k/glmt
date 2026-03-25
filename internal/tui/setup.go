@@ -8,6 +8,7 @@ import (
 )
 
 const hostSuggestion = "gitlab.com"
+const hostLabel = "GitLab host:"
 
 // SetupState represents the current state of the setup screen.
 type SetupState int
@@ -274,7 +275,7 @@ func (m SetupModel) View() tea.View {
 	switch m.state {
 	case SetupStateHost:
 		b.WriteString("  ")
-		b.WriteString(sBold.Styled("GitLab host:"))
+		b.WriteString(sBold.Styled(hostLabel))
 		b.WriteString(" ")
 		b.WriteString(m.host)
 		if ghost := m.hostGhostText(); ghost != "" {
@@ -288,7 +289,7 @@ func (m SetupModel) View() tea.View {
 		view.Cursor = tea.NewCursor(15+m.cursor, 3)
 	case SetupStateToken:
 		b.WriteString("  ")
-		b.WriteString(sBold.Styled("GitLab host:"))
+		b.WriteString(sBold.Styled(hostLabel))
 		b.WriteString(" ")
 		b.WriteString(m.host)
 		b.WriteString("\n")
@@ -307,7 +308,7 @@ func (m SetupModel) View() tea.View {
 		view.Cursor = tea.NewCursor(37+m.cursor, 5)
 	case SetupStateValidating:
 		b.WriteString("  ")
-		b.WriteString(sBold.Styled("GitLab host:"))
+		b.WriteString(sBold.Styled(hostLabel))
 		b.WriteString(" ")
 		b.WriteString(m.host)
 		b.WriteString("\n")
@@ -326,7 +327,7 @@ func (m SetupModel) View() tea.View {
 		view = tea.NewView(b.String())
 	case SetupStateSuccess:
 		b.WriteString("  ")
-		b.WriteString(sBold.Styled("GitLab host:"))
+		b.WriteString(sBold.Styled(hostLabel))
 		b.WriteString(" ")
 		b.WriteString(m.host)
 		b.WriteString("\n\n")
@@ -337,7 +338,7 @@ func (m SetupModel) View() tea.View {
 		view = tea.NewView(b.String())
 	case SetupStateError:
 		b.WriteString("  ")
-		b.WriteString(sBold.Styled("GitLab host:"))
+		b.WriteString(sBold.Styled(hostLabel))
 		b.WriteString(" ")
 		b.WriteString(m.host)
 		b.WriteString("\n\n")
