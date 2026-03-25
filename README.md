@@ -8,6 +8,8 @@ A local TUI that queues and merges GitLab MRs one by one — a lightweight alter
 > **Disclaimer:** This project is fully vibe-coded. The author doesn't know Go
 > and hasn't read the code. That said, it's used daily and solves a real need.
 
+![glmt demo](demo.gif)
+
 ## Why
 
 GitLab merge trains are a Premium/Ultimate feature that runs parallel

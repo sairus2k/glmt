@@ -33,12 +33,17 @@ func run() error {
 	}
 
 	nonInteractive := flag.Bool("non-interactive", false, "Skip TUI, run train directly")
+	demoMode := flag.Bool("demo", false, "Run with mock data for demo recording")
 	host := flag.String("host", "", "GitLab host (e.g. gitlab.example.com)")
 	token := flag.String("token", "", "Personal access token")
 	projectID := flag.Int("project-id", 0, "GitLab project ID")
 	mrs := flag.String("mrs", "", "Comma-separated list of MR IIDs to merge (e.g. 42,38,35)")
 	enableLog := flag.Bool("log", false, "Write JSON Lines log file to ~/.local/state/glmt/")
 	flag.Parse()
+
+	if *demoMode {
+		return runDemo()
+	}
 
 	if *nonInteractive {
 		return runNonInteractive(*host, *token, *projectID, *mrs, *enableLog)
