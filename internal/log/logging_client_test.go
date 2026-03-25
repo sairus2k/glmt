@@ -44,13 +44,6 @@ func (m *mockClient) GetMergeRequestPipeline(_ context.Context, _, _ int) (*gitl
 func (m *mockClient) ListPipelines(_ context.Context, _ int, _, _, _ string) ([]*gitlab.Pipeline, error) {
 	return nil, nil
 }
-func (m *mockClient) CancelPipeline(_ context.Context, _, _ int) error {
-	return nil
-}
-func (m *mockClient) RetryPipeline(_ context.Context, _, pipelineID int) (*gitlab.Pipeline, error) {
-	return &gitlab.Pipeline{ID: pipelineID}, nil
-}
-
 func TestLoggingClient_DelegatesAndLogs(t *testing.T) {
 	dir := t.TempDir()
 	fl, err := NewFileLogger(dir, "tok")

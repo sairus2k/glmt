@@ -26,8 +26,6 @@ type MockClient struct {
 	MergeMergeRequestFn       func(ctx context.Context, projectID, mrIID int, sha string) (string, error)
 	GetMergeRequestPipelineFn func(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, string, error)
 	ListPipelinesFn           func(ctx context.Context, projectID int, ref, status, sha string) ([]*gitlab.Pipeline, error)
-	CancelPipelineFn          func(ctx context.Context, projectID, pipelineID int) error
-	RetryPipelineFn           func(ctx context.Context, projectID, pipelineID int) (*gitlab.Pipeline, error)
 }
 
 func (m *MockClient) record(method string, args ...any) {
@@ -96,22 +94,6 @@ func (m *MockClient) ListPipelines(ctx context.Context, projectID int, ref, stat
 		return m.ListPipelinesFn(ctx, projectID, ref, status, sha)
 	}
 	return nil, nil
-}
-
-func (m *MockClient) CancelPipeline(ctx context.Context, projectID, pipelineID int) error {
-	m.record("CancelPipeline", projectID, pipelineID)
-	if m.CancelPipelineFn != nil {
-		return m.CancelPipelineFn(ctx, projectID, pipelineID)
-	}
-	return nil
-}
-
-func (m *MockClient) RetryPipeline(ctx context.Context, projectID, pipelineID int) (*gitlab.Pipeline, error) {
-	m.record("RetryPipeline", projectID, pipelineID)
-	if m.RetryPipelineFn != nil {
-		return m.RetryPipelineFn(ctx, projectID, pipelineID)
-	}
-	return &gitlab.Pipeline{}, nil
 }
 
 // CallsTo returns all calls to the given method name.

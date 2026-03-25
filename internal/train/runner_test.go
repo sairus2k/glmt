@@ -52,9 +52,6 @@ func TestRunnerRun(t *testing.T) {
 				makeMR(3, "MR 3"),
 			},
 			setup: func(m *MockClient) {
-				// Rebase always succeeds (default)
-				// Pipeline always succeeds (default)
-				// GetMergeRequest returns MR with SHA
 				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
 					return &gitlab.MergeRequest{
 						IID:                 mrIID,
@@ -63,22 +60,11 @@ func TestRunnerRun(t *testing.T) {
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
-				// MergeMergeRequest succeeds (default) — returns "merge-commit-sha-{mrIID}"
-				// ListPipelines for cancel: return a running pipeline when SHA is a cancel SHA
-				// ListPipelines for main pipeline wait: sha == "merge-commit-sha-3" (last MR)
-				pipelineID := 100
+				// waitForMainPipeline called with sha="merge-commit-sha-3" (last MR)
 				m.ListPipelinesFn = func(_ context.Context, _ int, ref, _, sha string) ([]*gitlab.Pipeline, error) {
 					if ref == "main" && sha == "merge-commit-sha-3" {
-						// Main pipeline wait — return success
 						return []*gitlab.Pipeline{
 							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
-						}, nil
-					}
-					if ref == "main" && sha != "" {
-						// Cancel step for MR 1 and MR 2
-						pipelineID++
-						return []*gitlab.Pipeline{
-							{ID: pipelineID, Status: "running", Ref: "main", SHA: sha, WebURL: fmt.Sprintf("http://example.com/pipelines/%d", pipelineID)},
 						}, nil
 					}
 					return nil, nil
@@ -94,17 +80,10 @@ func TestRunnerRun(t *testing.T) {
 				assert.Equal(t, "http://example.com/pipelines/200", result.MainPipelineURL)
 			},
 			assertCalls: func(t *testing.T, m *MockClient) {
-				// Each MR: RebaseMergeRequest, GetMergeRequest, MergeMergeRequest
-				// Non-last MRs: ListPipelines(sha=merge-commit), CancelPipeline
-				// Final: ListPipelines(sha=merge-commit-sha-3) for main pipeline wait
 				rebaseCalls := m.CallsTo("RebaseMergeRequest")
 				assert.Len(t, rebaseCalls, 3)
 				mergeCalls := m.CallsTo("MergeMergeRequest")
 				assert.Len(t, mergeCalls, 3)
-				cancelCalls := m.CallsTo("CancelPipeline")
-				assert.Len(t, cancelCalls, 2, "should cancel main pipeline after MR 1 and MR 2")
-				retryCalls := m.CallsTo("RetryPipeline")
-				assert.Empty(t, retryCalls, "should not retry any pipeline")
 				pipelineCalls := m.CallsTo("GetMergeRequestPipeline")
 				assert.Empty(t, pipelineCalls, "pipeline wait is always skipped")
 			},
@@ -258,15 +237,10 @@ func TestRunnerRun(t *testing.T) {
 				assert.Empty(t, result.MainPipelineURL)
 			},
 			assertCalls: func(t *testing.T, m *MockClient) {
-				// Only rebase calls — no ListPipelines since no MR merged
 				rebaseCalls := m.CallsTo("RebaseMergeRequest")
 				assert.Len(t, rebaseCalls, 2)
 				mergeCalls := m.CallsTo("MergeMergeRequest")
 				assert.Empty(t, mergeCalls)
-				cancelCalls := m.CallsTo("CancelPipeline")
-				assert.Empty(t, cancelCalls)
-				retryCalls := m.CallsTo("RetryPipeline")
-				assert.Empty(t, retryCalls)
 				listCalls := m.CallsTo("ListPipelines")
 				assert.Empty(t, listCalls, "no ListPipelines calls when nothing merged")
 			},
@@ -319,13 +293,7 @@ func TestRunnerRun(t *testing.T) {
 				assert.Equal(t, "success", result.MainPipelineStatus)
 				assert.Equal(t, "http://example.com/pipelines/300", result.MainPipelineURL)
 			},
-			assertCalls: func(t *testing.T, m *MockClient) {
-				// Single MR (last): rebase, getMR, merge — no cancel
-				cancelCalls := m.CallsTo("CancelPipeline")
-				assert.Empty(t, cancelCalls, "should not cancel pipeline for last/only MR")
-				retryCalls := m.CallsTo("RetryPipeline")
-				assert.Empty(t, retryCalls)
-			},
+			assertCalls: func(_ *testing.T, _ *MockClient) {},
 		},
 		{
 			name: "merge non-SHA error - MR skipped",
@@ -473,21 +441,10 @@ func TestRunnerRun(t *testing.T) {
 						DetailedMergeStatus: "mergeable",
 					}, nil
 				}
-				// Default merge returns "merge-commit-sha-{mrIID}"
-				// Last MR is 30, so waitForMainPipeline is called with sha="merge-commit-sha-30"
-				// Cancel for MR 10 uses sha="merge-commit-sha-10"
-				// Cancel for MR 20 uses sha="merge-commit-sha-20"
 				m.ListPipelinesFn = func(_ context.Context, _ int, ref, _, sha string) ([]*gitlab.Pipeline, error) {
 					if ref == "main" && sha == "merge-commit-sha-30" {
-						// Main pipeline wait
 						return []*gitlab.Pipeline{
 							{ID: 600, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/600"},
-						}, nil
-					}
-					if ref == "main" && sha != "" {
-						// Cancel step for MR 10 and MR 20
-						return []*gitlab.Pipeline{
-							{ID: 500, Status: "running", Ref: "main", SHA: sha},
 						}, nil
 					}
 					return nil, nil
@@ -505,119 +462,18 @@ func TestRunnerRun(t *testing.T) {
 					"RebaseMergeRequest",
 					"GetMergeRequest",
 					"MergeMergeRequest",
-					"ListPipelines",  // sha=merge-commit-sha-10
-					"CancelPipeline", // cancel main
 					// MR 20
 					"RebaseMergeRequest",
 					"GetMergeRequest",
 					"MergeMergeRequest",
-					"ListPipelines",  // sha=merge-commit-sha-20
-					"CancelPipeline", // cancel main
 					// MR 30 (last)
 					"RebaseMergeRequest",
 					"GetMergeRequest",
 					"MergeMergeRequest",
-					// No cancel for last MR
 					// Main pipeline wait
-					"ListPipelines", // sha=merge-commit-sha-30
+					"ListPipelines",
 				}
 				assert.Equal(t, expected, methods)
-			},
-		},
-		{
-			name: "cancels pending pipeline found by SHA",
-			mrs: []*gitlab.MergeRequest{
-				makeMR(1, "MR 1"),
-				makeMR(2, "MR 2"),
-			},
-			setup: func(m *MockClient) {
-				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
-					return &gitlab.MergeRequest{
-						IID:                 mrIID,
-						SHA:                 fmt.Sprintf("sha-%d", mrIID),
-						TargetBranch:        "main",
-						DetailedMergeStatus: "mergeable",
-					}, nil
-				}
-				// Default merge returns "merge-commit-sha-{mrIID}"
-				// Cancel for MR 1 uses sha="merge-commit-sha-1"
-				// waitForMainPipeline uses sha="merge-commit-sha-2"
-				m.ListPipelinesFn = func(_ context.Context, _ int, ref, _, sha string) ([]*gitlab.Pipeline, error) {
-					if ref == "main" && sha == "merge-commit-sha-2" {
-						// Main pipeline wait
-						return []*gitlab.Pipeline{
-							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
-						}, nil
-					}
-					if ref == "main" && sha != "" {
-						// Cancel step — return pending pipeline
-						return []*gitlab.Pipeline{
-							{ID: 101, Status: "pending", Ref: "main", SHA: sha},
-						}, nil
-					}
-					return nil, nil
-				}
-			},
-			assertResult: func(t *testing.T, result *Result) {
-				require.Len(t, result.MRResults, 2)
-				assert.Equal(t, MRStatusMerged, result.MRResults[0].Status)
-				assert.Equal(t, MRStatusMerged, result.MRResults[1].Status)
-			},
-			assertCalls: func(t *testing.T, m *MockClient) {
-				cancelCalls := m.CallsTo("CancelPipeline")
-				require.Len(t, cancelCalls, 1)
-				assert.Equal(t, 101, cancelCalls[0].Args[1], "should cancel pending pipeline 101")
-			},
-		},
-		{
-			name: "retries once when no pipeline found immediately",
-			mrs: []*gitlab.MergeRequest{
-				makeMR(1, "MR 1"),
-				makeMR(2, "MR 2"),
-			},
-			setup: func(m *MockClient) {
-				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
-					return &gitlab.MergeRequest{
-						IID:                 mrIID,
-						SHA:                 fmt.Sprintf("sha-%d", mrIID),
-						TargetBranch:        "main",
-						DetailedMergeStatus: "mergeable",
-					}, nil
-				}
-				// Default merge returns "merge-commit-sha-{mrIID}"
-				// Cancel for MR 1 uses sha="merge-commit-sha-1": first call returns nil, retry returns pipeline
-				// waitForMainPipeline uses sha="merge-commit-sha-2"
-				shaCallCount := 0
-				m.ListPipelinesFn = func(_ context.Context, _ int, ref, _, sha string) ([]*gitlab.Pipeline, error) {
-					if ref == "main" && sha == "merge-commit-sha-2" {
-						// Main pipeline wait
-						return []*gitlab.Pipeline{
-							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
-						}, nil
-					}
-					if ref == "main" && sha != "" {
-						shaCallCount++
-						// First call returns nothing (pipeline not created yet)
-						// On retry, return a pipeline
-						if shaCallCount > 1 {
-							return []*gitlab.Pipeline{
-								{ID: 102, Status: "running", Ref: "main", SHA: sha},
-							}, nil
-						}
-						return nil, nil
-					}
-					return nil, nil
-				}
-			},
-			assertResult: func(t *testing.T, result *Result) {
-				require.Len(t, result.MRResults, 2)
-				assert.Equal(t, MRStatusMerged, result.MRResults[0].Status)
-				assert.Equal(t, MRStatusMerged, result.MRResults[1].Status)
-			},
-			assertCalls: func(t *testing.T, m *MockClient) {
-				cancelCalls := m.CallsTo("CancelPipeline")
-				require.Len(t, cancelCalls, 1)
-				assert.Equal(t, 102, cancelCalls[0].Args[1], "should cancel pipeline 102 found on retry")
 			},
 		},
 		{
@@ -659,9 +515,6 @@ func TestRunnerRun(t *testing.T) {
 				assert.Equal(t, "http://example.com/pipelines/15554", result.MainPipelineURL, "should pick up new pipeline, not stale one")
 			},
 			assertCalls: func(t *testing.T, m *MockClient) {
-				cancelCalls := m.CallsTo("CancelPipeline")
-				assert.Empty(t, cancelCalls, "should not cancel pipeline for last/only MR")
-				// Should have polled ListPipelines multiple times to wait for pipeline
 				listCalls := m.CallsTo("ListPipelines")
 				assert.GreaterOrEqual(t, len(listCalls), 2, "should have at least 2 polls")
 			},
@@ -735,66 +588,6 @@ func TestRunnerRun(t *testing.T) {
 			assertCalls: func(t *testing.T, m *MockClient) {
 				getMRCalls := m.CallsTo("GetMergeRequest")
 				assert.GreaterOrEqual(t, len(getMRCalls), 3, "should retry stale merge status")
-			},
-		},
-		{
-			name: "cancels correct pipeline by merge commit SHA",
-			mrs: []*gitlab.MergeRequest{
-				makeMR(1, "MR 1"),
-				makeMR(2, "MR 2"),
-			},
-			setup: func(m *MockClient) {
-				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
-					return &gitlab.MergeRequest{
-						IID:                 mrIID,
-						SHA:                 fmt.Sprintf("sha-%d", mrIID),
-						TargetBranch:        "main",
-						DetailedMergeStatus: "mergeable",
-					}, nil
-				}
-				m.MergeMergeRequestFn = func(_ context.Context, _ int, mrIID int, _ string) (string, error) {
-					return fmt.Sprintf("merge-commit-%d", mrIID), nil
-				}
-				// Cancel for MR 1 uses sha="merge-commit-1"
-				// waitForMainPipeline uses sha="merge-commit-2" (last MR)
-				m.ListPipelinesFn = func(_ context.Context, _ int, ref, _, sha string) ([]*gitlab.Pipeline, error) {
-					if ref == "main" && sha == "merge-commit-2" {
-						// Main pipeline wait
-						return []*gitlab.Pipeline{
-							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
-						}, nil
-					}
-					// SHA-filtered query for cancel
-					if ref == "main" && sha != "" {
-						return []*gitlab.Pipeline{
-							{ID: 150, Status: "running", Ref: "main", SHA: sha},
-						}, nil
-					}
-					return nil, nil
-				}
-			},
-			assertResult: func(t *testing.T, result *Result) {
-				require.Len(t, result.MRResults, 2)
-				assert.Equal(t, MRStatusMerged, result.MRResults[0].Status)
-				assert.Equal(t, MRStatusMerged, result.MRResults[1].Status)
-			},
-			assertCalls: func(t *testing.T, m *MockClient) {
-				cancelCalls := m.CallsTo("CancelPipeline")
-				require.Len(t, cancelCalls, 1)
-				assert.Equal(t, 150, cancelCalls[0].Args[1])
-
-				// Verify ListPipelines was called with the merge commit SHA
-				listCalls := m.CallsTo("ListPipelines")
-				foundSHACall := false
-				for _, c := range listCalls {
-					if len(c.Args) >= 4 {
-						if sha, ok := c.Args[3].(string); ok && sha == "merge-commit-1" {
-							foundSHACall = true
-							break
-						}
-					}
-				}
-				assert.True(t, foundSHACall, "ListPipelines should be called with merge commit SHA")
 			},
 		},
 	}
@@ -898,17 +691,8 @@ func TestRunnerWarnsOnEmptyMergeCommitSHA(t *testing.T) {
 	mock.MergeMergeRequestFn = func(_ context.Context, _ int, _ int, _ string) (string, error) {
 		return "", nil
 	}
-	listCallCount := 0
-	mock.ListPipelinesFn = func(_ context.Context, _ int, ref, status, sha string) ([]*gitlab.Pipeline, error) {
+	mock.ListPipelinesFn = func(_ context.Context, _ int, ref, _, sha string) ([]*gitlab.Pipeline, error) {
 		if ref == "main" && sha == "" {
-			listCallCount++
-			if listCallCount == 1 {
-				// Cancel pipeline lookup: return a running pipeline
-				return []*gitlab.Pipeline{
-					{ID: 101, Status: "running", Ref: "main"},
-				}, nil
-			}
-			// Main pipeline wait: return a finished pipeline
 			return []*gitlab.Pipeline{
 				{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
 			}, nil
@@ -929,7 +713,7 @@ func TestRunnerWarnsOnEmptyMergeCommitSHA(t *testing.T) {
 	runner.PollPipelineInterval = 0
 	runner.PollRebaseInterval = 0
 
-	mrs := []*gitlab.MergeRequest{makeMR(1, "MR 1"), makeMR(2, "MR 2")}
+	mrs := []*gitlab.MergeRequest{makeMR(1, "MR 1")}
 	_, err := runner.Run(context.Background(), mrs)
 	require.NoError(t, err)
 
@@ -944,10 +728,6 @@ func TestRunnerWarnsOnEmptyMergeCommitSHA(t *testing.T) {
 		}
 	}
 	assert.True(t, foundWarning, "should warn when merge commit SHA is empty")
-
-	// Cancel still works via unfiltered fallback
-	cancelCalls := mock.CallsTo("CancelPipeline")
-	assert.Len(t, cancelCalls, 1, "should still cancel pipeline via fallback")
 }
 
 func TestNewRunner(t *testing.T) {

@@ -78,8 +78,6 @@ func TestTrainRun_MultipleSteps(t *testing.T) {
 		{mrIID: 42, step: "pipeline_success", message: "Pipeline passed"},
 		{mrIID: 42, step: "merge_wait", message: "Waiting for merge readiness..."},
 		{mrIID: 42, step: "merge", message: "sha: a1b2c3"},
-		{mrIID: 42, step: "cancel_main_pipeline_wait", message: "Cancelling main pipeline..."},
-		{mrIID: 42, step: "cancel_main_pipeline", message: "next MR pending"},
 	}
 
 	for _, msg := range steps {
@@ -87,8 +85,8 @@ func TestTrainRun_MultipleSteps(t *testing.T) {
 		m = result.(TrainRunModel)
 	}
 
-	// rebase_wait + rebase dedup into 1 entry, so 7 unique display entries
-	require.Len(t, m.MRSteps()[0].Steps, 7)
+	// rebase_wait + rebase dedup into 1 entry, so 5 unique display entries
+	require.Len(t, m.MRSteps()[0].Steps, 5)
 	assert.Equal(t, "Rebase onto main", m.MRSteps()[0].Steps[0].Name)
 	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[0].Status)
 	assert.Equal(t, "Pipeline running", m.MRSteps()[0].Steps[1].Name)
@@ -99,10 +97,6 @@ func TestTrainRun_MultipleSteps(t *testing.T) {
 	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[3].Status)
 	assert.Equal(t, "Merged", m.MRSteps()[0].Steps[4].Name)
 	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[4].Status)
-	assert.Equal(t, "Waiting for main pipeline", m.MRSteps()[0].Steps[5].Name)
-	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[5].Status)
-	assert.Equal(t, "Main pipeline cancelled", m.MRSteps()[0].Steps[6].Name)
-	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[6].Status)
 
 	// MR 2 and 3 should still be empty.
 	assert.Empty(t, m.MRSteps()[1].Steps)
@@ -250,29 +244,6 @@ func TestTrainRun_DeduplicateConsecutiveSameStep(t *testing.T) {
 	// Per-MR steps should also have only one entry
 	require.Len(t, m.MRSteps()[0].Steps, 1, "per-MR steps should also deduplicate")
 	assert.Equal(t, "Rebase successful", m.MRSteps()[0].Steps[0].Message)
-}
-
-func TestTrainRun_DedupedRunningStepKeepsSpinner(t *testing.T) {
-	m := newTestTrainModel()
-
-	// First cancel_main_pipeline_wait — should be running with spinner
-	result, _ := m.Update(trainStepMsg{mrIID: 42, step: "cancel_main_pipeline_wait", message: "Cancelling main pipeline..."})
-	m = result.(TrainRunModel)
-
-	require.Len(t, m.LogEntries(), 1)
-	assert.Equal(t, StepRunning, m.LogEntries()[0].Status, "initial cancel_main_pipeline_wait should be running")
-
-	// Second cancel_main_pipeline_wait (retry) — same display name, triggers dedup
-	result, _ = m.Update(trainStepMsg{mrIID: 42, step: "cancel_main_pipeline_wait", message: "No main pipeline found, retrying (1/3)..."})
-	m = result.(TrainRunModel)
-
-	require.Len(t, m.LogEntries(), 1, "should dedup into one entry")
-	assert.Equal(t, StepRunning, m.LogEntries()[0].Status, "deduped cancel_main_pipeline_wait must stay running (spinner visible)")
-	assert.Equal(t, "No main pipeline found, retrying (1/3)...", m.LogEntries()[0].Message)
-
-	// Also verify per-MR steps
-	require.Len(t, m.MRSteps()[0].Steps, 1, "per-MR steps should also dedup")
-	assert.Equal(t, StepRunning, m.MRSteps()[0].Steps[0].Status, "per-MR deduped step must stay running")
 }
 
 func TestTrainRun_ViewShowsMainPipelineURL(t *testing.T) {

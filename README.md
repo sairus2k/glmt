@@ -76,13 +76,16 @@ For each selected MR, in order:
    The branch pipeline is skipped after rebase to avoid redundant CI.
 2. **Merge** with a SHA guard to ensure the branch has not moved. On SHA
    mismatch, retry the rebase once.
-3. **Cancel the main-branch pipeline** triggered by the merge (if more MRs
-   remain) to avoid wasting CI on intermediate states.
-4. After the last MR, let the final main pipeline run and display its status.
-   If the last MR was skipped but earlier MRs merged, restart the cancelled
-   main pipeline so CI runs against the actual final state.
+3. After the last MR merges, **wait for the final main-branch pipeline** and
+   display its status.
 
 Skipped MRs do not abort the train. Already-merged MRs are never rolled back.
+
+> **Tip:** To avoid wasting CI on intermediate main-branch commits, set
+> `interruptible: true` on your CI jobs and enable **Auto-cancel redundant
+> pipelines** in your GitLab project settings (CI/CD → General pipelines).
+> GitLab will automatically cancel superseded pipelines when a new commit lands
+> on the target branch.
 
 ## Alternatives
 

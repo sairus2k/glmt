@@ -220,30 +220,6 @@ func (c *APIClient) ListPipelines(ctx context.Context, projectID int, ref, statu
 	return result, nil
 }
 
-// CancelPipeline cancels a running pipeline.
-func (c *APIClient) CancelPipeline(ctx context.Context, projectID, pipelineID int) error {
-	_, _, err := c.client.Pipelines.CancelPipelineBuild(int64(projectID), int64(pipelineID), goGitLab.WithContext(ctx))
-	if err != nil {
-		return fmt.Errorf("canceling pipeline %d: %w", pipelineID, err)
-	}
-	return nil
-}
-
-// RetryPipeline retries (restarts) a pipeline.
-func (c *APIClient) RetryPipeline(ctx context.Context, projectID, pipelineID int) (*Pipeline, error) {
-	p, _, err := c.client.Pipelines.RetryPipelineBuild(int64(projectID), int64(pipelineID), goGitLab.WithContext(ctx))
-	if err != nil {
-		return nil, fmt.Errorf("retrying pipeline %d: %w", pipelineID, err)
-	}
-	return &Pipeline{
-		ID:     int(p.ID),
-		Status: p.Status,
-		Ref:    p.Ref,
-		SHA:    p.SHA,
-		WebURL: p.WebURL,
-	}, nil
-}
-
 // graphQLStringInt is an int that GraphQL encodes as a JSON string (e.g. IID).
 type graphQLStringInt int
 

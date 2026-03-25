@@ -80,17 +80,3 @@ func (c *LoggingClient) ListPipelines(ctx context.Context, projectID int, ref, s
 	c.logCall("ListPipelines", map[string]any{"project_id": projectID, "ref": ref, "status": status, "sha": sha}, err, start)
 	return result, err
 }
-
-func (c *LoggingClient) CancelPipeline(ctx context.Context, projectID, pipelineID int) error {
-	start := time.Now()
-	err := c.inner.CancelPipeline(ctx, projectID, pipelineID)
-	c.logCall("CancelPipeline", map[string]any{"project_id": projectID, "pipeline_id": pipelineID}, err, start)
-	return err
-}
-
-func (c *LoggingClient) RetryPipeline(ctx context.Context, projectID, pipelineID int) (*gitlab.Pipeline, error) {
-	start := time.Now()
-	result, err := c.inner.RetryPipeline(ctx, projectID, pipelineID)
-	c.logCall("RetryPipeline", map[string]any{"project_id": projectID, "pipeline_id": pipelineID}, err, start)
-	return result, err
-}

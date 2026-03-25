@@ -273,46 +273,6 @@ func TestListPipelines_WithSHAFilter(t *testing.T) {
 	assert.Equal(t, "abc123", pipelines[0].SHA)
 }
 
-func TestCancelPipeline(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/v4/projects/1/pipelines/300/cancel", r.URL.Path)
-
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"id": 300, "status": "canceled", "ref": "main", "sha": "aaa111"}`)
-	}))
-	defer server.Close()
-
-	client := newTestClient(t, server)
-	err := client.CancelPipeline(context.Background(), 1, 300)
-	require.NoError(t, err)
-}
-
-func TestRetryPipeline(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/api/v4/projects/1/pipelines/300/retry", r.URL.Path)
-
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{
-			"id": 301, "status": "pending", "ref": "main",
-			"sha": "aaa111", "web_url": "https://gitlab.com/pipeline/301"
-		}`)
-	}))
-	defer server.Close()
-
-	client := newTestClient(t, server)
-	pipeline, err := client.RetryPipeline(context.Background(), 1, 300)
-	require.NoError(t, err)
-	require.NotNil(t, pipeline)
-
-	assert.Equal(t, 301, pipeline.ID)
-	assert.Equal(t, "pending", pipeline.Status)
-	assert.Equal(t, "main", pipeline.Ref)
-	assert.Equal(t, "aaa111", pipeline.SHA)
-	assert.Equal(t, "https://gitlab.com/pipeline/301", pipeline.WebURL)
-}
-
 func TestGetCurrentUser(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)

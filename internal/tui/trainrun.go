@@ -261,16 +261,10 @@ func mapStepName(step, targetBranch, message string) string {
 		return "SHA mismatch — retrying"
 	case "skip":
 		return fmt.Sprintf("Skipped: %s", message)
-	case "cancel_main_pipeline":
-		return "Main pipeline cancelled"
-	case "cancel_main_pipeline_wait":
-		return "Waiting for main pipeline"
 	case "main_pipeline_wait":
 		return "Main pipeline running"
 	case "main_pipeline_done":
 		return fmt.Sprintf("Main pipeline %s", message)
-	case "restart_pipeline":
-		return "Restart cancelled pipeline"
 	default:
 		return step
 	}
@@ -279,9 +273,9 @@ func mapStepName(step, targetBranch, message string) string {
 // mapStepStatus converts a step identifier to its status.
 func mapStepStatus(step string) StepStatus {
 	switch step {
-	case "pipeline_wait", "main_pipeline_wait", "rebase_wait", "merge_wait", "cancel_main_pipeline_wait":
+	case "pipeline_wait", "main_pipeline_wait", "rebase_wait", "merge_wait":
 		return StepRunning
-	case "rebase", "pipeline_success", "pipeline_skip", "merge", "cancel_main_pipeline", "main_pipeline_done", "restart_pipeline":
+	case "rebase", "pipeline_success", "pipeline_skip", "merge", "main_pipeline_done":
 		return StepDone
 	case "pipeline_failed":
 		return StepFailed

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is glmt
 
-Sequential merge queue for GitLab — a local TUI that queues and merges GitLab MRs one by one, rebasing each onto the freshly updated target branch and managing intermediate CI pipelines. A lightweight alternative to GitLab's merge trains (Premium/Ultimate) for self-hosted GitLab Free.
+Sequential merge queue for GitLab — a local TUI that queues and merges GitLab MRs one by one, rebasing each onto the freshly updated target branch. A lightweight alternative to GitLab's merge trains (Premium/Ultimate) for self-hosted GitLab Free.
 
 ## Commands
 
@@ -37,12 +37,12 @@ go test -v -tags e2e -count=1 -timeout 20m ./e2e/...
 **Core packages under `internal/`:**
 
 - **`gitlab/`** — `Client` interface (`interface.go`) is the primary abstraction seam. `APIClient` in `client.go` wraps `gitlab.com/gitlab-org/api/client-go/v2`. Only `client.go` and `client_test.go` import the library directly; all other packages depend on the interface.
-- **`train/`** — `Runner` executes the merge train state machine: rebase → poll pipeline → merge with SHA guard → cancel/restart intermediate pipelines. Hand-written mock in `mock_client.go`.
+- **`train/`** — `Runner` executes the merge train state machine: rebase → merge with SHA guard → wait for final main pipeline. Hand-written mock in `mock_client.go`.
 - **`tui/`** — Bubble Tea v2 app. `AppModel` (`app.go`) routes between screens: Setup → RepoPicker → MRList → TrainRun. Async ops use Bubble Tea commands; state transitions use typed messages.
 - **`auth/`** — Reads credentials from glab CLI config (`~/.config/glab-cli/config.yml`), falls back to glmt config.
 - **`config/`** — TOML config at `~/.config/glmt/config.toml`.
 
-**Key flow:** User selects MRs in TUI → `train.Runner.Run()` processes them sequentially → each MR: rebase, wait for pipeline (poll 10s), merge with SHA guard (retry once on 409), cancel intermediate main pipeline.
+**Key flow:** User selects MRs in TUI → `train.Runner.Run()` processes them sequentially → each MR: rebase, merge with SHA guard (retry once on 409). After the last merge, wait for the final main pipeline.
 
 ## Testing Conventions
 

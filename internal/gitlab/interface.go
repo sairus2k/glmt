@@ -89,10 +89,4 @@ type Client interface {
 	// ListPipelines returns pipelines for a ref, ordered by ID descending.
 	// If sha is non-empty, only pipelines for that exact commit SHA are returned.
 	ListPipelines(ctx context.Context, projectID int, ref, status, sha string) ([]*Pipeline, error)
-
-	// CancelPipeline cancels a running pipeline.
-	CancelPipeline(ctx context.Context, projectID, pipelineID int) error
-
-	// RetryPipeline retries (restarts) a pipeline.
-	RetryPipeline(ctx context.Context, projectID, pipelineID int) (*Pipeline, error)
 }
