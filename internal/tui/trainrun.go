@@ -164,7 +164,14 @@ func (m TrainRunModel) handleStep(msg trainStepMsg) (tea.Model, tea.Cmd) {
 		StartedAt: now,
 	}
 
-	// Mark all previously running steps as done (processing is sequential)
+	m.markAllRunningDone()
+	m.deduplicateOrAppend(entry, mrIdx)
+
+	return m, nil
+}
+
+// markAllRunningDone marks all previously running steps as done (processing is sequential).
+func (m *TrainRunModel) markAllRunningDone() {
 	for i := range m.logEntries {
 		if m.logEntries[i].Status == StepRunning {
 			m.logEntries[i].Status = StepDone
@@ -182,36 +189,19 @@ func (m TrainRunModel) handleStep(msg trainStepMsg) (tea.Model, tea.Cmd) {
 			m.mainPipelineSteps[i].Status = StepDone
 		}
 	}
+}
 
-	// Deduplicate: if the last log entry matches, update timestamp instead of appending
+// deduplicateOrAppend either updates the last log entry in place (if it matches)
+// or appends the new entry to the appropriate step lists.
+func (m *TrainRunModel) deduplicateOrAppend(entry StepEntry, mrIdx int) {
 	if n := len(m.logEntries); n > 0 {
 		last := &m.logEntries[n-1]
 		if last.MRIID == entry.MRIID && last.Name == entry.Name {
 			last.Timestamp = entry.Timestamp
 			last.Message = entry.Message
 			last.Status = entry.Status
-			// Update per-MR steps too
-			if mrIdx >= 0 {
-				steps := m.mrSteps[mrIdx].Steps
-				if len(steps) > 0 {
-					s := &steps[len(steps)-1]
-					if s.Name == entry.Name {
-						s.Timestamp = entry.Timestamp
-						s.Message = entry.Message
-						s.Status = entry.Status
-					}
-				}
-			} else if entry.MRIID == 0 {
-				if len(m.mainPipelineSteps) > 0 {
-					s := &m.mainPipelineSteps[len(m.mainPipelineSteps)-1]
-					if s.Name == entry.Name {
-						s.Timestamp = entry.Timestamp
-						s.Message = entry.Message
-						s.Status = entry.Status
-					}
-				}
-			}
-			return m, nil
+			m.updateLastStepEntry(entry, mrIdx)
+			return
 		}
 	}
 
@@ -224,8 +214,30 @@ func (m TrainRunModel) handleStep(msg trainStepMsg) (tea.Model, tea.Cmd) {
 
 	// Append to chronological log
 	m.logEntries = append(m.logEntries, entry)
+}
 
-	return m, nil
+// updateLastStepEntry updates the last entry in the per-MR or main pipeline step list
+// when deduplicating a log entry.
+func (m *TrainRunModel) updateLastStepEntry(entry StepEntry, mrIdx int) {
+	if mrIdx >= 0 {
+		if n := len(m.mrSteps[mrIdx].Steps); n > 0 {
+			s := &m.mrSteps[mrIdx].Steps[n-1]
+			if s.Name == entry.Name {
+				s.Timestamp = entry.Timestamp
+				s.Message = entry.Message
+				s.Status = entry.Status
+			}
+		}
+	} else if entry.MRIID == 0 {
+		if len(m.mainPipelineSteps) > 0 {
+			s := &m.mainPipelineSteps[len(m.mainPipelineSteps)-1]
+			if s.Name == entry.Name {
+				s.Timestamp = entry.Timestamp
+				s.Message = entry.Message
+				s.Status = entry.Status
+			}
+		}
+	}
 }
 
 // mapStepName converts internal step identifiers to display names.
