@@ -15,6 +15,9 @@ go build -o glmt ./cmd/glmt/
 # Lint (CI rejects failures)
 golangci-lint run ./...
 
+# Vulnerability check
+govulncheck ./...
+
 # Unit tests
 go test ./...
 
