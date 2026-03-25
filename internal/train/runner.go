@@ -185,11 +185,11 @@ func (r *Runner) performMerge(ctx context.Context, mr *gitlab.MergeRequest, sha 
 	return MRStatusMerged, "", mergeCommitSHA
 }
 
-// retryMergeOn405 handles the 405 race condition where GitLab reports "mergeable"
+// retryMergeOn405 handles the 405/422 race condition where GitLab reports "mergeable"
 // but the merge API isn't ready. Retries waitForMergeReady + merge up to MaxMergeStatusRetries times.
 func (r *Runner) retryMergeOn405(ctx context.Context, mrIID int) (string, MRStatus, string) {
 	for attempt := 1; attempt <= r.MaxMergeStatusRetries; attempt++ {
-		r.log(mrIID, "merge", fmt.Sprintf("Got 405, retrying after merge readiness check (%d/%d)...", attempt, r.MaxMergeStatusRetries))
+		r.log(mrIID, "merge", fmt.Sprintf("Not mergeable, retrying after merge readiness check (%d/%d)...", attempt, r.MaxMergeStatusRetries))
 		currentMR, err := r.waitForMergeReady(ctx, mrIID)
 		if err != nil {
 			if ctx.Err() != nil {

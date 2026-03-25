@@ -47,6 +47,10 @@ go test -v -tags e2e -count=1 -timeout 20m ./e2e/...
 
 **Key flow:** User selects MRs in TUI → `train.Runner.Run()` processes them sequentially → each MR: rebase, merge with SHA guard (retry once on 409). After the last merge, wait for the final main pipeline.
 
+## Logs
+
+Session logs are JSONL files in `~/.local/state/glmt/`, named by timestamp (e.g. `2026-03-25T050723-651.jsonl`). Each line is a JSON object with `level`, `msg`, `step`, and optional `api` fields. The latest file is the most recent session.
+
 ## Testing Conventions
 
 - 5-layer strategy: auth/config unit → gitlab httptest → train runner with mock → TUI model state → E2E with real GitLab container

@@ -189,6 +189,20 @@ func TestMergeMergeRequest_NotMergeable(t *testing.T) {
 	assert.Empty(t, mergeCommitSHA)
 }
 
+func TestMergeMergeRequest_NotMergeable422(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = fmt.Fprint(w, `{"message": "Branch cannot be merged"}`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	mergeCommitSHA, err := client.MergeMergeRequest(context.Background(), 1, 10, "abc123")
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrNotMergeable)
+	assert.Empty(t, mergeCommitSHA)
+}
+
 func TestGetMergeRequestPipeline(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)

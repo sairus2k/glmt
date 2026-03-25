@@ -157,7 +157,7 @@ func (c *APIClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int,
 			if errResp.Response.StatusCode == 409 {
 				return "", fmt.Errorf(mergingMRFmt, mrIID, ErrSHAMismatch)
 			}
-			if errResp.Response.StatusCode == 405 {
+			if errResp.Response.StatusCode == 405 || errResp.Response.StatusCode == 422 {
 				return "", fmt.Errorf(mergingMRFmt, mrIID, ErrNotMergeable)
 			}
 		}
