@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	sHeader   = ansi.NewStyle(ansi.AttrBold, ansi.AttrBrightWhiteForegroundColor)
+	sHeader   = ansi.NewStyle(ansi.AttrBold)
 	sSuccess  = ansi.NewStyle(ansi.AttrGreenForegroundColor)
 	sError    = ansi.NewStyle(ansi.AttrRedForegroundColor)
 	sWarning  = ansi.NewStyle(ansi.AttrYellowForegroundColor)
