@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	goGitLab "gitlab.com/gitlab-org/api/client-go"
+	goGitLab "gitlab.com/gitlab-org/api/client-go/v2"
 )
 
 // APIClient implements the Client interface using the go-gitlab library.

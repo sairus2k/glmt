@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	goGitLab "gitlab.com/gitlab-org/api/client-go"
+	goGitLab "gitlab.com/gitlab-org/api/client-go/v2"
 )
 
 // newTestClient creates an APIClient pointing at the given test server.

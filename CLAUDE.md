@@ -21,8 +21,8 @@ go test ./...
 # Single package
 go test -v ./internal/train/...
 
-# E2E tests (requires Docker, not part of default test run)
-go test -v -tags e2e -count=1 ./e2e/...
+# E2E tests (requires Docker, not part of default test run; GitLab CE is slow to boot)
+go test -v -tags e2e -count=1 -timeout 20m ./e2e/...
 
 # Run
 ./glmt                            # Interactive TUI
@@ -36,7 +36,7 @@ go test -v -tags e2e -count=1 ./e2e/...
 
 **Core packages under `internal/`:**
 
-- **`gitlab/`** — `Client` interface (`interface.go`) is the primary abstraction seam. `APIClient` in `client.go` wraps the go-gitlab library. All other packages depend on the interface, never on the concrete client.
+- **`gitlab/`** — `Client` interface (`interface.go`) is the primary abstraction seam. `APIClient` in `client.go` wraps `gitlab.com/gitlab-org/api/client-go/v2`. Only `client.go` and `client_test.go` import the library directly; all other packages depend on the interface.
 - **`train/`** — `Runner` executes the merge train state machine: rebase → poll pipeline → merge with SHA guard → cancel/restart intermediate pipelines. Hand-written mock in `mock_client.go`.
 - **`tui/`** — Bubble Tea v2 app. `AppModel` (`app.go`) routes between screens: Setup → RepoPicker → MRList → TrainRun. Async ops use Bubble Tea commands; state transitions use typed messages.
 - **`auth/`** — Reads credentials from glab CLI config (`~/.config/glab-cli/config.yml`), falls back to glmt config.
