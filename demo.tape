@@ -20,24 +20,26 @@ Set WindowBarSize 40
 # Start glmt in demo mode
 Type "./glmt --demo"
 Enter
-Sleep 1.5s
+Wait+Screen /filter/
 
 # RepoPicker: type to filter, select backend-api
+Sleep 500ms
 Type "back"
 Sleep 800ms
 Enter
-Sleep 1.5s
+Wait+Screen /toggle/
 
 # MRList: select all eligible MRs
+Sleep 500ms
 Type "a"
 Sleep 2s
 
 # Start the merge train
 Enter
-Sleep 12s
+Wait+Screen /Finished/
 
 # Show the finished state
-Sleep 2s
+Sleep 3s
 
 # Quit
 Type "q"
