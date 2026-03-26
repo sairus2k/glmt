@@ -500,7 +500,9 @@ func (m *AppModel) startTrain(mrs []*gitlab.MergeRequest) tea.Cmd {
 		runner := train.NewRunner(client, projectID, logger)
 		runner.PollRebaseInterval = time.Duration(m.cfg.Behavior.PollRebaseIntervalS) * time.Second
 		runner.PollPipelineInterval = time.Duration(m.cfg.Behavior.PollPipelineIntervalS) * time.Second
-		runner.MaxMainPipelineAttempts = m.cfg.Behavior.MainPipelineTimeoutM * 60 / m.cfg.Behavior.PollPipelineIntervalS
+		if m.cfg.Behavior.PollPipelineIntervalS > 0 {
+			runner.MaxMainPipelineAttempts = m.cfg.Behavior.MainPipelineTimeoutM * 60 / m.cfg.Behavior.PollPipelineIntervalS
+		}
 
 		result, _ := runner.Run(ctx, mrs)
 

@@ -53,6 +53,22 @@ func run() error {
 }
 
 func runNonInteractive(host, token string, projectID int, mrsFlag string, enableLog bool) error {
+	cfg, host, token, mrIIDs, err := prepareNonInteractive(host, token, projectID, mrsFlag)
+	if err != nil {
+		return err
+	}
+
+	client, err := gitlab.NewAPIClient(host, token)
+	if err != nil {
+		return fmt.Errorf("creating GitLab client: %w", err)
+	}
+
+	return runTrain(client, projectID, mrIIDs, cfg, enableLog, token)
+}
+
+// prepareNonInteractive loads config, applies flag overrides, validates required
+// fields, and parses MR IIDs. Returns values ready for client creation and runTrain.
+func prepareNonInteractive(host, token string, projectID int, mrsFlag string) (*config.Config, string, string, []int, error) {
 	cfgPath := configPath()
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -82,23 +98,24 @@ func runNonInteractive(host, token string, projectID int, mrsFlag string, enable
 		missing = append(missing, "--mrs")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("non-interactive mode requires flags: %s", strings.Join(missing, ", "))
+		return nil, "", "", nil, fmt.Errorf("non-interactive mode requires flags: %s", strings.Join(missing, ", "))
 	}
 
 	mrIIDs, err := parseMRIIDs(mrsFlag)
 	if err != nil {
-		return err
+		return nil, "", "", nil, err
 	}
 
-	// Create GitLab client
-	client, err := gitlab.NewAPIClient(host, token)
-	if err != nil {
-		return fmt.Errorf("creating GitLab client: %w", err)
-	}
+	return cfg, host, token, mrIIDs, nil
+}
 
+// runTrain fetches MRs, executes the merge train, and prints results.
+// This is the testable core of non-interactive mode — it accepts a gitlab.Client
+// so tests can inject a mock.
+func runTrain(client gitlab.Client, projectID int, mrIIDs []int, cfg *config.Config, enableLog bool, token string) error {
 	// Set up file logging — wraps client BEFORE any API calls
 	fileLogger := setupFileLogger(enableLog, token)
-	var apiClient gitlab.Client = client
+	apiClient := client
 	if fileLogger != nil {
 		defer fileLogger.Close()
 		fileLogger.LogSession()
@@ -129,7 +146,9 @@ func runNonInteractive(host, token string, projectID int, mrsFlag string, enable
 	runner := train.NewRunner(apiClient, projectID, logger)
 	runner.PollRebaseInterval = time.Duration(cfg.Behavior.PollRebaseIntervalS) * time.Second
 	runner.PollPipelineInterval = time.Duration(cfg.Behavior.PollPipelineIntervalS) * time.Second
-	runner.MaxMainPipelineAttempts = cfg.Behavior.MainPipelineTimeoutM * 60 / cfg.Behavior.PollPipelineIntervalS
+	if cfg.Behavior.PollPipelineIntervalS > 0 {
+		runner.MaxMainPipelineAttempts = cfg.Behavior.MainPipelineTimeoutM * 60 / cfg.Behavior.PollPipelineIntervalS
+	}
 	result, err := runner.Run(ctx, mrs)
 
 	// Log run end (before error check — partial results are still logged)
@@ -161,6 +180,9 @@ func parseMRIIDs(mrsFlag string) ([]int, error) {
 		iid, err := strconv.Atoi(p)
 		if err != nil {
 			return nil, fmt.Errorf("invalid MR IID %q: %w", p, err)
+		}
+		if iid <= 0 {
+			return nil, fmt.Errorf("invalid MR IID %q: must be a positive integer", p)
 		}
 		mrIIDs = append(mrIIDs, iid)
 	}
@@ -204,6 +226,9 @@ func buildLogFunc(fileLogger *glmtlog.FileLogger) func(int, string, string) {
 
 // printTrainResults prints the train results and returns an error if not all MRs were merged.
 func printTrainResults(result *train.Result) error {
+	if result == nil {
+		return fmt.Errorf("no results to display")
+	}
 	fmt.Println()
 	fmt.Println("=== Train Results ===")
 	allMerged := true

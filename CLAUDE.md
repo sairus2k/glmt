@@ -27,6 +27,13 @@ go test -v ./internal/train/...
 # E2E tests (requires Docker, not part of default test run; GitLab CE is slow to boot)
 go test -v -tags e2e -count=1 -timeout 20m ./e2e/...
 
+# Coverage — generate profile and summary by function
+go test -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out
+
+# Coverage — single package with percentage
+go test -cover ./internal/train/...
+
 # Run
 ./glmt                            # Interactive TUI
 ./glmt -non-interactive -host <host> -token <token> -project-id <id> -mrs <iids>
@@ -50,6 +57,14 @@ go test -v -tags e2e -count=1 -timeout 20m ./e2e/...
 ## Logs
 
 Session logs are JSONL files in `~/.local/state/glmt/`, named by timestamp (e.g. `2026-03-25T050723-651.jsonl`). Each line is a JSON object with `level`, `msg`, `step`, and optional `api` fields. The latest file is the most recent session.
+
+## Coverage
+
+- CI generates `coverage.out` via `go test -coverprofile=coverage.out ./...` and uploads it to SonarQube (see `.github/workflows/ci.yml`)
+- SonarQube project key: `sairus2k_glmt` (configured in `sonar-project.properties`)
+- Excluded from coverage: `*_test.go`, `mock_*.go`, `testdata/`
+- E2E tests do not contribute to coverage
+- `coverage.out` and `coverage.html` are gitignored
 
 ## Testing Conventions
 
