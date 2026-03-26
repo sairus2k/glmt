@@ -672,6 +672,7 @@ func TestRunnerLogger(t *testing.T) {
 	assert.True(t, steps["rebase"], "should log rebase step")
 	assert.True(t, steps["pipeline_skip"], "should log pipeline_skip step")
 	assert.True(t, steps["merge_wait"], "should log merge_wait step")
+	assert.True(t, steps["merge_attempt"], "should log merge_attempt step")
 	assert.True(t, steps["merge"], "should log merge step")
 	assert.True(t, steps["main_pipeline_wait"], "should log main_pipeline_wait step")
 	assert.True(t, steps["main_pipeline_done"], "should log main_pipeline_done step")

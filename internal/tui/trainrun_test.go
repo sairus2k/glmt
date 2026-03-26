@@ -77,7 +77,8 @@ func TestTrainRun_MultipleSteps(t *testing.T) {
 		{mrIID: 42, step: "pipeline_wait", message: "Waiting for pipeline..."},
 		{mrIID: 42, step: "pipeline_success", message: "Pipeline passed"},
 		{mrIID: 42, step: "merge_wait", message: "Waiting for merge readiness..."},
-		{mrIID: 42, step: "merge", message: "sha: a1b2c3"},
+		{mrIID: 42, step: "merge_attempt", message: "Merging with SHA guard..."},
+		{mrIID: 42, step: "merge", message: "a1b2c3"},
 	}
 
 	for _, msg := range steps {
@@ -85,8 +86,8 @@ func TestTrainRun_MultipleSteps(t *testing.T) {
 		m = result.(TrainRunModel)
 	}
 
-	// rebase_wait + rebase dedup into 1 entry, so 5 unique display entries
-	require.Len(t, m.MRSteps()[0].Steps, 5)
+	// rebase_wait + rebase dedup into 1 entry, so 6 unique display entries
+	require.Len(t, m.MRSteps()[0].Steps, 6)
 	assert.Equal(t, "Rebase onto main", m.MRSteps()[0].Steps[0].Name)
 	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[0].Status)
 	assert.Equal(t, "Pipeline running", m.MRSteps()[0].Steps[1].Name)
@@ -95,8 +96,10 @@ func TestTrainRun_MultipleSteps(t *testing.T) {
 	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[2].Status)
 	assert.Equal(t, "Checking merge status", m.MRSteps()[0].Steps[3].Name)
 	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[3].Status)
-	assert.Equal(t, "Merged", m.MRSteps()[0].Steps[4].Name)
+	assert.Equal(t, "Merging", m.MRSteps()[0].Steps[4].Name)
 	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[4].Status)
+	assert.Equal(t, "Merged", m.MRSteps()[0].Steps[5].Name)
+	assert.Equal(t, StepDone, m.MRSteps()[0].Steps[5].Status)
 
 	// MR 2 and 3 should still be empty.
 	assert.Empty(t, m.MRSteps()[1].Steps)
@@ -111,7 +114,8 @@ func TestTrainRun_SecondMR(t *testing.T) {
 		{mrIID: 42, step: "rebase_wait", message: "Rebasing merge request..."},
 		{mrIID: 42, step: "rebase", message: "Rebase successful"},
 		{mrIID: 42, step: "merge_wait", message: "Waiting for merge readiness..."},
-		{mrIID: 42, step: "merge", message: "sha: a1b2c3"},
+		{mrIID: 42, step: "merge_attempt", message: "Merging with SHA guard..."},
+		{mrIID: 42, step: "merge", message: "a1b2c3"},
 	}
 	for _, msg := range steps {
 		result, _ := m.Update(msg)
@@ -246,6 +250,20 @@ func TestTrainRun_DeduplicateConsecutiveSameStep(t *testing.T) {
 	assert.Equal(t, "Rebase successful", m.MRSteps()[0].Steps[0].Message)
 }
 
+func TestTrainRun_MergeAttemptStep(t *testing.T) {
+	m := newTestTrainModel()
+
+	msg := trainStepMsg{mrIID: 42, step: "merge_attempt", message: "Merging with SHA guard..."}
+	result, _ := m.Update(msg)
+	m = result.(TrainRunModel)
+
+	require.Len(t, m.MRSteps()[0].Steps, 1)
+	step := m.MRSteps()[0].Steps[0]
+	assert.Equal(t, "Merging", step.Name)
+	assert.Equal(t, StepRunning, step.Status)
+	assert.Equal(t, "Merging with SHA guard...", step.Message)
+}
+
 func TestTrainRun_ViewShowsMainPipelineURL(t *testing.T) {
 	m := newTestTrainModel()
 
@@ -315,7 +333,8 @@ func TestTrainRun_ViewHierarchicalLayout(t *testing.T) {
 		{mrIID: 42, step: "rebase_wait", message: "Rebasing..."},
 		{mrIID: 42, step: "rebase", message: "OK"},
 		{mrIID: 42, step: "merge_wait", message: "Waiting..."},
-		{mrIID: 42, step: "merge", message: "sha: abc123"},
+		{mrIID: 42, step: "merge_attempt", message: "Merging..."},
+		{mrIID: 42, step: "merge", message: "abc123"},
 	}
 	for _, msg := range steps {
 		result, _ := m.Update(msg)

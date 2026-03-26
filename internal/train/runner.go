@@ -153,7 +153,7 @@ func (r *Runner) processMRAttempt(ctx context.Context, mr *gitlab.MergeRequest, 
 
 // performMerge executes the merge with SHA guard, handling SHA mismatch and 405 retries.
 func (r *Runner) performMerge(ctx context.Context, mr *gitlab.MergeRequest, sha string, isRetry bool) (MRStatus, string, string) {
-	r.log(mr.IID, "merge", fmt.Sprintf("Merging with SHA guard (sha=%s)...", sha))
+	r.log(mr.IID, "merge_attempt", fmt.Sprintf("Merging with SHA guard (sha=%s)...", sha))
 	mergeCommitSHA, mergeErr := r.client.MergeMergeRequest(ctx, r.projectID, mr.IID, sha)
 	if mergeErr != nil {
 		if ctx.Err() != nil {
@@ -178,7 +178,7 @@ func (r *Runner) performMerge(ctx context.Context, mr *gitlab.MergeRequest, sha 
 			return MRStatusSkipped, fmt.Sprintf("merge failed: %v", mergeErr), ""
 		}
 	}
-	r.log(mr.IID, "merge", "Merged successfully")
+	r.log(mr.IID, "merge", mergeCommitSHA)
 	if mergeCommitSHA == "" {
 		r.log(mr.IID, "merge", "Warning: GitLab did not return merge commit SHA, pipeline lookup may be imprecise")
 	}
@@ -189,7 +189,7 @@ func (r *Runner) performMerge(ctx context.Context, mr *gitlab.MergeRequest, sha 
 // but the merge API isn't ready. Retries waitForMergeReady + merge up to MaxMergeStatusRetries times.
 func (r *Runner) retryMergeOn405(ctx context.Context, mrIID int) (string, MRStatus, string) {
 	for attempt := 1; attempt <= r.MaxMergeStatusRetries; attempt++ {
-		r.log(mrIID, "merge", fmt.Sprintf("Not mergeable, retrying after merge readiness check (%d/%d)...", attempt, r.MaxMergeStatusRetries))
+		r.log(mrIID, "merge_attempt", fmt.Sprintf("Not mergeable, retrying after merge readiness check (%d/%d)...", attempt, r.MaxMergeStatusRetries))
 		currentMR, err := r.waitForMergeReady(ctx, mrIID)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -232,7 +232,7 @@ func (r *Runner) waitForMergeReady(ctx context.Context, mrIID int) (*gitlab.Merg
 			if staleRetries > r.MaxMergeStatusRetries {
 				return mr, fmt.Errorf("merge status: %s", mr.DetailedMergeStatus)
 			}
-			r.log(mrIID, "merge", fmt.Sprintf("Merge status is '%s', retrying (%d/%d)...", mr.DetailedMergeStatus, staleRetries, r.MaxMergeStatusRetries))
+			r.log(mrIID, "merge_wait", fmt.Sprintf("Merge status is '%s', retrying (%d/%d)...", mr.DetailedMergeStatus, staleRetries, r.MaxMergeStatusRetries))
 		}
 
 		select {

@@ -255,6 +255,8 @@ func mapStepName(step, targetBranch, message string) string {
 		return "Pipeline failed"
 	case "merge":
 		return "Merged"
+	case "merge_attempt":
+		return "Merging"
 	case "merge_wait":
 		return "Checking merge status"
 	case "merge_sha_mismatch":
@@ -273,7 +275,7 @@ func mapStepName(step, targetBranch, message string) string {
 // mapStepStatus converts a step identifier to its status.
 func mapStepStatus(step string) StepStatus {
 	switch step {
-	case "pipeline_wait", "main_pipeline_wait", "rebase_wait", "merge_wait":
+	case "pipeline_wait", "main_pipeline_wait", "rebase_wait", "merge_wait", "merge_attempt":
 		return StepRunning
 	case "rebase", "pipeline_success", "pipeline_skip", "merge", "main_pipeline_done":
 		return StepDone
