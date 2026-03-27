@@ -321,32 +321,37 @@ func (m AppModel) updateMRList(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.trainRun = NewTrainRunModel(msg.mrs)
 		return m, tea.Batch(m.startTrain(msg.mrs), spinnerTick())
 	case mrsLoadedMsg:
-		wasLoading := m.mrList.loading
-		newList, cmd := m.mrList.Update(msg)
-		m.mrList = newList.(MRListModel)
-		cmds := []tea.Cmd{cmd}
-		if m.mrList.refreshing {
-			if wasLoading {
-				// First load: trigger REST calls to kick merge status recalculation.
-				iids := collectUncheckedIIDs(m.mrList)
-				if len(iids) > 0 {
-					cmds = append(cmds, m.triggerMergeChecks(iids))
-				}
-				cmds = append(cmds, spinnerTick())
-			}
-			// Unchecked statuses resolve quickly (4s); pipelines take minutes (15s).
-			if m.mrList.HasUncheckedMRs() {
-				cmds = append(cmds, scheduleBackgroundRefetch())
-			} else {
-				cmds = append(cmds, scheduleBackgroundRefetchAfter(15*time.Second))
-			}
-		}
-		return m, tea.Batch(cmds...)
+		return m.handleMRsLoaded(msg)
 	}
 
 	newList, cmd := m.mrList.Update(msg)
 	m.mrList = newList.(MRListModel)
 	return m, cmd
+}
+
+// handleMRsLoaded processes newly fetched MR data and schedules follow-up commands.
+func (m AppModel) handleMRsLoaded(msg mrsLoadedMsg) (tea.Model, tea.Cmd) {
+	wasLoading := m.mrList.loading
+	newList, cmd := m.mrList.Update(msg)
+	m.mrList = newList.(MRListModel)
+	cmds := []tea.Cmd{cmd}
+	if m.mrList.refreshing {
+		if wasLoading {
+			// First load: trigger REST calls to kick merge status recalculation.
+			iids := collectUncheckedIIDs(m.mrList)
+			if len(iids) > 0 {
+				cmds = append(cmds, m.triggerMergeChecks(iids))
+			}
+			cmds = append(cmds, spinnerTick())
+		}
+		// Unchecked statuses resolve quickly (4s); pipelines take minutes (15s).
+		if m.mrList.HasUncheckedMRs() {
+			cmds = append(cmds, scheduleBackgroundRefetch())
+		} else {
+			cmds = append(cmds, scheduleBackgroundRefetchAfter(15*time.Second))
+		}
+	}
+	return m, tea.Batch(cmds...)
 }
 
 // collectUncheckedIIDs returns IIDs of ineligible MRs with "unchecked" status.

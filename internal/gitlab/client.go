@@ -238,44 +238,83 @@ func (g *graphQLStringInt) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// graphQLAuthor represents the author field in a GraphQL MR node.
+type graphQLAuthor struct {
+	Username string `json:"username"`
+}
+
+// graphQLApprover represents a single approver in a GraphQL MR node.
+type graphQLApprover struct {
+	Username string `json:"username"`
+}
+
+// graphQLApprovedBy represents the approvedBy connection in a GraphQL MR node.
+type graphQLApprovedBy struct {
+	Nodes []graphQLApprover `json:"nodes"`
+}
+
+// graphQLHeadPipeline represents the head pipeline in a GraphQL MR node.
+type graphQLHeadPipeline struct {
+	Status string `json:"status"`
+}
+
 // graphQLNode represents a single MR node in a GraphQL response.
 type graphQLNode struct {
-	IID         graphQLStringInt `json:"iid"`
-	Title       string           `json:"title"`
-	Draft       bool             `json:"draft"`
-	CommitCount int              `json:"commitCount"`
-	Author      *struct {
-		Username string `json:"username"`
-	} `json:"author"`
-	SourceBranch string `json:"sourceBranch"`
-	TargetBranch string `json:"targetBranch"`
-	DiffHeadSha  string `json:"diffHeadSha"`
-	CreatedAt    string `json:"createdAt"`
-	ApprovedBy   struct {
-		Nodes []struct {
-			Username string `json:"username"`
-		} `json:"nodes"`
-	} `json:"approvedBy"`
-	HeadPipeline *struct {
-		Status string `json:"status"`
-	} `json:"headPipeline"`
-	DetailedMergeStatus string `json:"detailedMergeStatus"`
-	WebURL              string `json:"webUrl"`
+	IID                 graphQLStringInt     `json:"iid"`
+	Title               string               `json:"title"`
+	Draft               bool                 `json:"draft"`
+	CommitCount         int                  `json:"commitCount"`
+	Author              *graphQLAuthor       `json:"author"`
+	SourceBranch        string               `json:"sourceBranch"`
+	TargetBranch        string               `json:"targetBranch"`
+	DiffHeadSha         string               `json:"diffHeadSha"`
+	CreatedAt           string               `json:"createdAt"`
+	ApprovedBy          graphQLApprovedBy    `json:"approvedBy"`
+	HeadPipeline        *graphQLHeadPipeline `json:"headPipeline"`
+	DetailedMergeStatus string               `json:"detailedMergeStatus"`
+	WebURL              string               `json:"webUrl"`
+}
+
+// graphQLMRConnection represents the mergeRequests connection in a GraphQL response.
+type graphQLMRConnection struct {
+	PageInfo goGitLab.PageInfo `json:"pageInfo"`
+	Nodes    []graphQLNode     `json:"nodes"`
+}
+
+// graphQLProject represents the project field in a GraphQL response.
+type graphQLProject struct {
+	MergeRequests graphQLMRConnection `json:"mergeRequests"`
+}
+
+// graphQLData represents the top-level data field in a GraphQL response.
+type graphQLData struct {
+	Project *graphQLProject `json:"project"`
+}
+
+// graphQLError represents a single error in a GraphQL response.
+type graphQLError struct {
+	Message string `json:"message"`
 }
 
 // graphQLMRResponse is the typed response for the ListMergeRequestsFull GraphQL query.
 type graphQLMRResponse struct {
-	Data *struct {
-		Project *struct {
-			MergeRequests struct {
-				PageInfo goGitLab.PageInfo `json:"pageInfo"`
-				Nodes    []graphQLNode     `json:"nodes"`
-			} `json:"mergeRequests"`
-		} `json:"project"`
-	} `json:"data"`
-	Errors []struct {
-		Message string `json:"message"`
-	} `json:"errors"`
+	Data   *graphQLData   `json:"data"`
+	Errors []graphQLError `json:"errors"`
+}
+
+// validate checks for API-level and data-level errors in a GraphQL response.
+func (r *graphQLMRResponse) validate(projectPath string) error {
+	if len(r.Errors) > 0 {
+		msgs := make([]string, len(r.Errors))
+		for i, e := range r.Errors {
+			msgs[i] = e.Message
+		}
+		return fmt.Errorf("graphql ListMergeRequestsFull: %s", strings.Join(msgs, "; "))
+	}
+	if r.Data == nil || r.Data.Project == nil {
+		return fmt.Errorf("graphql ListMergeRequestsFull: project %q not found", projectPath)
+	}
+	return nil
 }
 
 // convertGraphQLNode converts a GraphQL MR node to a domain MergeRequest.
@@ -341,16 +380,8 @@ func (c *APIClient) ListMergeRequestsFull(ctx context.Context, projectPath strin
 			return nil, fmt.Errorf("graphql ListMergeRequestsFull: %w", err)
 		}
 
-		if len(resp.Errors) > 0 {
-			msgs := make([]string, len(resp.Errors))
-			for i, e := range resp.Errors {
-				msgs[i] = e.Message
-			}
-			return nil, fmt.Errorf("graphql ListMergeRequestsFull: %s", strings.Join(msgs, "; "))
-		}
-
-		if resp.Data == nil || resp.Data.Project == nil {
-			return nil, fmt.Errorf("graphql ListMergeRequestsFull: project %q not found", projectPath)
+		if err := resp.validate(projectPath); err != nil {
+			return nil, err
 		}
 
 		conn := resp.Data.Project.MergeRequests

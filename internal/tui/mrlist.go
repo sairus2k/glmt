@@ -412,13 +412,15 @@ type tableLayout struct {
 	titleWidth   int
 }
 
+const commitsFmt = "%d commits"
+
 // computeLayout computes column widths for table alignment across all MRs.
 func (m MRListModel) computeLayout() tableLayout {
 	var l tableLayout
 	for _, mr := range m.eligible {
 		l.maxIID = max(l.maxIID, ansi.StringWidth(fmt.Sprintf("!%d", mr.IID)))
 		l.maxAuthor = max(l.maxAuthor, ansi.StringWidth("@"+mr.Author))
-		l.maxCommits = max(l.maxCommits, ansi.StringWidth(fmt.Sprintf("%d commits", mr.CommitCount)))
+		l.maxCommits = max(l.maxCommits, ansi.StringWidth(fmt.Sprintf(commitsFmt, mr.CommitCount)))
 		if mr.ApprovalCount > 0 {
 			l.maxApprovals = max(l.maxApprovals, ansi.StringWidth(fmt.Sprintf("✓ %d", mr.ApprovalCount)))
 		}
@@ -427,7 +429,7 @@ func (m MRListModel) computeLayout() tableLayout {
 		mr := imr.MR
 		l.maxIID = max(l.maxIID, ansi.StringWidth(fmt.Sprintf("!%d", mr.IID)))
 		l.maxAuthor = max(l.maxAuthor, ansi.StringWidth("@"+mr.Author))
-		l.maxCommits = max(l.maxCommits, ansi.StringWidth(fmt.Sprintf("%d commits", mr.CommitCount)))
+		l.maxCommits = max(l.maxCommits, ansi.StringWidth(fmt.Sprintf(commitsFmt, mr.CommitCount)))
 		if mr.ApprovalCount > 0 {
 			l.maxApprovals = max(l.maxApprovals, ansi.StringWidth(fmt.Sprintf("✓ %d", mr.ApprovalCount)))
 		}
@@ -544,7 +546,7 @@ func (m MRListModel) renderEligibleRow(mr *gitlab.MergeRequest, idx int, lay tab
 
 	lb.WriteString(padLeft(sFaint.Styled("@"+mr.Author), lay.maxAuthor))
 	lb.WriteString("  ")
-	lb.WriteString(padLeft(sFaint.Styled(fmt.Sprintf("%d commits", mr.CommitCount)), lay.maxCommits))
+	lb.WriteString(padLeft(sFaint.Styled(fmt.Sprintf(commitsFmt, mr.CommitCount)), lay.maxCommits))
 
 	if lay.maxApprovals > 0 {
 		lb.WriteString("  ")
@@ -585,7 +587,7 @@ func (m MRListModel) renderIneligibleRow(imr IneligibleMR, idx int, lay tableLay
 
 	lb.WriteString(padLeft(sDim.Styled("@"+imr.MR.Author), lay.maxAuthor))
 	lb.WriteString("  ")
-	lb.WriteString(padLeft(sDim.Styled(fmt.Sprintf("%d commits", imr.MR.CommitCount)), lay.maxCommits))
+	lb.WriteString(padLeft(sDim.Styled(fmt.Sprintf(commitsFmt, imr.MR.CommitCount)), lay.maxCommits))
 
 	if lay.maxApprovals > 0 {
 		lb.WriteString("  ")

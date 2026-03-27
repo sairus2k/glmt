@@ -28,7 +28,7 @@ type glabHostConfig struct {
 // If host is empty, returns the first host found (in file order).
 // If host is specified, returns credentials for that specific host.
 // configDir is the path to the glab config directory (e.g., ~/.config/glab-cli).
-func ReadCredentials(configDir string, host string) (*Credentials, error) {
+func ReadCredentials(configDir, host string) (*Credentials, error) {
 	configPath := filepath.Join(configDir, "config.yml")
 
 	data, err := os.ReadFile(configPath)
