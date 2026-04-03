@@ -130,6 +130,30 @@ func TestLoadPartial(t *testing.T) {
 	}
 }
 
+func TestLoad_InvalidTOML(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+
+	// Write syntactically invalid TOML content.
+	if err := os.WriteFile(path, []byte("[gitlab\nhost = broken"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load() error = nil, want unmarshal error for invalid TOML")
+	}
+}
+
+func TestSave_ReadOnlyPath(t *testing.T) {
+	// /dev/null is a file, so MkdirAll cannot create a directory under it.
+	path := "/dev/null/impossible/config.toml"
+
+	err := Save(path, DefaultConfig())
+	if err == nil {
+		t.Fatal("Save() error = nil, want MkdirAll error")
+	}
+}
+
 func TestDefaultPath(t *testing.T) {
 	path := DefaultPath()
 
