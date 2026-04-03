@@ -308,6 +308,38 @@ func TestListPipelines_WithSHAFilter(t *testing.T) {
 	assert.Equal(t, "abc123", pipelines[0].SHA)
 }
 
+func TestListPipelines_WithStatusFilter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "main", r.URL.Query().Get("ref"))
+		assert.Equal(t, "id", r.URL.Query().Get("order_by"))
+		assert.Equal(t, "desc", r.URL.Query().Get("sort"))
+		assert.Equal(t, "success", r.URL.Query().Get("status"))
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `[{"id": 500, "status": "success", "ref": "main", "sha": "ccc333", "web_url": "https://gitlab.com/pipeline/500"}]`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	pipelines, err := client.ListPipelines(context.Background(), 1, "main", "success", "")
+	require.NoError(t, err)
+	require.Len(t, pipelines, 1)
+	assert.Equal(t, 500, pipelines[0].ID)
+	assert.Equal(t, "success", pipelines[0].Status)
+}
+
+func TestListPipelines_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	pipelines, err := client.ListPipelines(context.Background(), 1, "main", "", "")
+	assert.Nil(t, pipelines)
+	assert.ErrorContains(t, err, "listing pipelines")
+}
+
 func TestGetCurrentUser(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
