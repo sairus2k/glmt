@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -28,12 +29,7 @@ type mockClient struct {
 }
 
 func (m *mockClient) called(method string) bool {
-	for _, c := range m.calls {
-		if c == method {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(m.calls, method)
 }
 
 func (m *mockClient) GetCurrentUser(ctx context.Context) (*gitlab.User, error) {
