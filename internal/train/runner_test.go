@@ -720,6 +720,37 @@ func TestRunnerRun(t *testing.T) {
 			},
 		},
 		{
+			name: "main pipeline wait - ListPipelines API error",
+			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
+			setup: func(m *MockClient) {
+				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					return &gitlab.MergeRequest{
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
+						DetailedMergeStatus: "mergeable",
+					}, nil
+				}
+				// ListPipelines returns a transient API error
+				m.ListPipelinesFn = func(_ context.Context, _ int, _, _, _ string) ([]*gitlab.Pipeline, error) {
+					return nil, fmt.Errorf("502 bad gateway")
+				}
+			},
+			assertResult: func(t *testing.T, result *Result) {
+				require.Len(t, result.MRResults, 1)
+				assert.Equal(t, MRStatusMerged, result.MRResults[0].Status,
+					"MR should still be marked as merged despite pipeline API error")
+				assert.Empty(t, result.MainPipelineStatus,
+					"pipeline status should be empty when API fails")
+				assert.Empty(t, result.MainPipelineURL,
+					"pipeline URL should be empty when API fails")
+			},
+			assertCalls: func(t *testing.T, m *MockClient) {
+				listCalls := m.CallsTo("ListPipelines")
+				assert.Len(t, listCalls, 1, "should stop polling after first API error")
+			},
+		},
+		{
 			name: "main pipeline timeout - never appears",
 			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
 			setup: func(m *MockClient) {
