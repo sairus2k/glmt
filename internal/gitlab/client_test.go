@@ -511,3 +511,65 @@ func TestListMergeRequestsFull_ProjectNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "not found")
 	assert.Nil(t, mrs)
 }
+
+func TestListProjects(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v4/projects", r.URL.Path)
+		assert.Equal(t, "true", r.URL.Query().Get("membership"))
+		assert.Equal(t, "name", r.URL.Query().Get("order_by"))
+		assert.Equal(t, "asc", r.URL.Query().Get("sort"))
+		assert.Empty(t, r.URL.Query().Get("search"))
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `[
+			{"id": 1, "path_with_namespace": "team/alpha", "web_url": "https://gitlab.com/team/alpha"},
+			{"id": 2, "path_with_namespace": "team/beta", "web_url": "https://gitlab.com/team/beta"}
+		]`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	projects, err := client.ListProjects(context.Background(), "")
+	require.NoError(t, err)
+	require.Len(t, projects, 2)
+
+	assert.Equal(t, 1, projects[0].ID)
+	assert.Equal(t, "team/alpha", projects[0].PathWithNamespace)
+	assert.Equal(t, "https://gitlab.com/team/alpha", projects[0].WebURL)
+
+	assert.Equal(t, 2, projects[1].ID)
+	assert.Equal(t, "team/beta", projects[1].PathWithNamespace)
+	assert.Equal(t, "https://gitlab.com/team/beta", projects[1].WebURL)
+}
+
+func TestListProjects_WithSearch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "alpha", r.URL.Query().Get("search"))
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `[
+			{"id": 1, "path_with_namespace": "team/alpha", "web_url": "https://gitlab.com/team/alpha"}
+		]`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	projects, err := client.ListProjects(context.Background(), "alpha")
+	require.NoError(t, err)
+	require.Len(t, projects, 1)
+	assert.Equal(t, "team/alpha", projects[0].PathWithNamespace)
+}
+
+func TestListProjects_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	projects, err := client.ListProjects(context.Background(), "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "listing projects")
+	assert.Nil(t, projects)
+}
