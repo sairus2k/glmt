@@ -679,6 +679,47 @@ func TestRunnerRun(t *testing.T) {
 			},
 		},
 		{
+			name: "main pipeline running then succeeds",
+			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
+			setup: func(m *MockClient) {
+				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					return &gitlab.MergeRequest{
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
+						DetailedMergeStatus: "mergeable",
+					}, nil
+				}
+				// Simulate real-world pipeline lifecycle: pending → running → success
+				pollCount := 0
+				m.ListPipelinesFn = func(_ context.Context, _ int, ref, _, sha string) ([]*gitlab.Pipeline, error) {
+					if ref == "main" && sha == "merge-commit-sha-1" {
+						pollCount++
+						status := "pending"
+						if pollCount == 2 {
+							status = "running"
+						} else if pollCount >= 3 {
+							status = "success"
+						}
+						return []*gitlab.Pipeline{
+							{ID: 500, Status: status, Ref: "main", WebURL: "http://example.com/pipelines/500"},
+						}, nil
+					}
+					return nil, nil
+				}
+			},
+			assertResult: func(t *testing.T, result *Result) {
+				require.Len(t, result.MRResults, 1)
+				assert.Equal(t, MRStatusMerged, result.MRResults[0].Status)
+				assert.Equal(t, "success", result.MainPipelineStatus)
+				assert.Equal(t, "http://example.com/pipelines/500", result.MainPipelineURL)
+			},
+			assertCalls: func(t *testing.T, m *MockClient) {
+				listCalls := m.CallsTo("ListPipelines")
+				assert.Len(t, listCalls, 3, "should poll 3 times: pending → running → success")
+			},
+		},
+		{
 			name: "main pipeline timeout - never appears",
 			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
 			setup: func(m *MockClient) {
