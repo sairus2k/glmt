@@ -637,7 +637,7 @@ func TestRunnerRun(t *testing.T) {
 			},
 			assertCalls: func(t *testing.T, m *MockClient) {
 				getMRCalls := m.CallsTo("GetMergeRequest")
-				assert.Equal(t, 5, len(getMRCalls),
+				assert.Len(t, getMRCalls, 5,
 					"should poll through all status transitions before merging")
 			},
 		},
@@ -781,7 +781,7 @@ func TestRunnerRun(t *testing.T) {
 				assert.Len(t, mergeCalls, 1, "should only attempt initial merge, not retry merge")
 				getMRCalls := m.CallsTo("GetMergeRequest")
 				// 1 initial waitForMergeReady + MaxMergeStatusRetries+1 retry polls
-				assert.Equal(t, 3, len(getMRCalls),
+				assert.Len(t, getMRCalls, 3,
 					"1 initial ready check + 2 retry polls (initial+1 retry) before giving up")
 			},
 		},
