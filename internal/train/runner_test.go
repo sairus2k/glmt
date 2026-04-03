@@ -679,6 +679,64 @@ func TestRunnerRun(t *testing.T) {
 			},
 		},
 		{
+			name: "permanently non-mergeable after rebase - MR skipped",
+			mrs: []*gitlab.MergeRequest{
+				makeMR(1, "MR 1"),
+				makeMR(2, "MR 2"),
+			},
+			setup: func(m *MockClient) {
+				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					status := "mergeable"
+					if mrIID == 1 {
+						// MR 1: GitLab permanently reports "conflict" after rebase
+						// (e.g., merge check detects semantic conflict not caught by git rebase)
+						status = "conflict"
+					}
+					return &gitlab.MergeRequest{
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
+						DetailedMergeStatus: status,
+					}, nil
+				}
+				m.ListPipelinesFn = func(_ context.Context, _ int, ref, _, sha string) ([]*gitlab.Pipeline, error) {
+					if ref == "main" && sha == "merge-commit-sha-2" {
+						return []*gitlab.Pipeline{
+							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
+						}, nil
+					}
+					return nil, nil
+				}
+			},
+			configRunner: func(r *Runner) {
+				r.MaxMergeStatusRetries = 2
+			},
+			assertResult: func(t *testing.T, result *Result) {
+				require.Len(t, result.MRResults, 2)
+				assert.Equal(t, MRStatusSkipped, result.MRResults[0].Status,
+					"MR 1 should be skipped: permanently non-mergeable")
+				assert.Contains(t, result.MRResults[0].SkipReason, "merge status: conflict")
+				assert.Equal(t, MRStatusMerged, result.MRResults[1].Status,
+					"MR 2 should still merge after MR 1 is skipped")
+				assert.Equal(t, "success", result.MainPipelineStatus)
+			},
+			assertCalls: func(t *testing.T, m *MockClient) {
+				getMRCalls := m.CallsTo("GetMergeRequest")
+				// MR 1: polled MaxMergeStatusRetries+1 times (initial + retries), then skipped
+				// MR 2: polled once (immediately mergeable)
+				mr1Polls := 0
+				for _, c := range getMRCalls {
+					if c.Args[1] == 1 {
+						mr1Polls++
+					}
+				}
+				assert.Equal(t, 3, mr1Polls,
+					"MR 1 should be polled 3 times: initial + 2 retries before giving up")
+				mergeCalls := m.CallsTo("MergeMergeRequest")
+				assert.Len(t, mergeCalls, 1, "only MR 2 should reach merge")
+			},
+		},
+		{
 			name: "main pipeline running then succeeds",
 			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
 			setup: func(m *MockClient) {
