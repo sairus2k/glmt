@@ -1048,6 +1048,7 @@ func TestRunnerContextCancelledMidTrain(t *testing.T) {
 	// Simulates user pressing Ctrl+C after MR 1 merges but before MR 2 starts.
 	// Verifies partial results are preserved and main pipeline wait is skipped.
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	mock := &MockClient{}
 	mock.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
