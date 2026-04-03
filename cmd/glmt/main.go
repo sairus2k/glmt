@@ -14,6 +14,7 @@ import (
 	"github.com/sairus2k/glmt/internal/config"
 	"github.com/sairus2k/glmt/internal/gitlab"
 	glmtlog "github.com/sairus2k/glmt/internal/log"
+	"github.com/sairus2k/glmt/internal/notify"
 	"github.com/sairus2k/glmt/internal/train"
 	"github.com/sairus2k/glmt/internal/tui"
 )
@@ -164,6 +165,9 @@ func runTrain(client gitlab.Client, projectID int, mrIIDs []int, cfg *config.Con
 	if err != nil {
 		return fmt.Errorf("running train: %w", err)
 	}
+
+	merged, skipped, _ := countResults(result)
+	notify.Send(cfg.Behavior.Notify, notify.FormatMessage(merged, skipped, result.MainPipelineStatus))
 
 	return printTrainResults(result)
 }

@@ -28,9 +28,10 @@ type DefaultsConfig struct {
 
 // BehaviorConfig holds behavioral settings.
 type BehaviorConfig struct {
-	PollRebaseIntervalS   int `toml:"poll_rebase_interval_s"`
-	PollPipelineIntervalS int `toml:"poll_pipeline_interval_s"`
-	MainPipelineTimeoutM  int `toml:"main_pipeline_timeout_m"`
+	PollRebaseIntervalS   int    `toml:"poll_rebase_interval_s"`
+	PollPipelineIntervalS int    `toml:"poll_pipeline_interval_s"`
+	MainPipelineTimeoutM  int    `toml:"main_pipeline_timeout_m"`
+	Notify                string `toml:"notify"`
 }
 
 // DefaultConfig returns the config with sensible defaults.
@@ -40,6 +41,7 @@ func DefaultConfig() *Config {
 			PollRebaseIntervalS:   2,
 			PollPipelineIntervalS: 10,
 			MainPipelineTimeoutM:  20,
+			Notify:                "off",
 		},
 	}
 }

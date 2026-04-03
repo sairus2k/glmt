@@ -11,6 +11,7 @@ import (
 	"github.com/sairus2k/glmt/internal/config"
 	"github.com/sairus2k/glmt/internal/gitlab"
 	glmtlog "github.com/sairus2k/glmt/internal/log"
+	"github.com/sairus2k/glmt/internal/notify"
 	"github.com/sairus2k/glmt/internal/train"
 )
 
@@ -391,7 +392,7 @@ func scheduleBackgroundRefetchAfter(d time.Duration) tea.Cmd {
 }
 
 func (m AppModel) updateTrainRun(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg.(type) {
+	switch msg := msg.(type) {
 	case trainAbortMsg:
 		if m.trainCancel != nil {
 			m.trainCancel()
@@ -406,6 +407,10 @@ func (m AppModel) updateTrainRun(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case trainDoneMsg:
 		newRun, _ := m.trainRun.Update(msg)
 		m.trainRun = newRun.(TrainRunModel)
+		if msg.result != nil {
+			merged, skipped, _ := countTrainResults(msg.result)
+			notify.Send(m.cfg.Behavior.Notify, notify.FormatMessage(merged, skipped, msg.result.MainPipelineStatus))
+		}
 		return m, nil
 	case trainBackMsg:
 		m.screen = ScreenMRList

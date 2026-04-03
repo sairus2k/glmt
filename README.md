@@ -68,7 +68,14 @@ repo = "myteam/myrepo"          # last-used project path
 poll_rebase_interval_s = 2      # how often to check rebase status
 poll_pipeline_interval_s = 10   # how often to check pipeline status
 main_pipeline_timeout_m = 20    # how long to wait for the main pipeline to finish (minutes)
+notify = "off"                  # terminal notification when train finishes: "off", "bel", "osc9"
 ```
+
+| Value | Effect |
+|-------|--------|
+| `off` | No notification (default) |
+| `bel` | Terminal bell (`\a`) — bounces dock icon, flashes taskbar, or plays a sound depending on terminal settings |
+| `osc9` | Desktop notification with summary text (supported by Ghostty, Windows Terminal, ConEmu, and others) |
 
 ## How it works
 
