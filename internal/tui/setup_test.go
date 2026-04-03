@@ -326,6 +326,125 @@ func TestSetup_ValidationCommandError(t *testing.T) {
 	assert.EqualError(t, invalidMsg.err, "invalid token")
 }
 
+func TestSetup_TokenCursorNavigation(t *testing.T) {
+	// Helper: get model into token state with a known token and cursor at end.
+	setupToken := func(t *testing.T, token string) tea.Model {
+		t.Helper()
+		var m tea.Model = NewSetupModel()
+		m = typeString(t, m, "gitlab.example.com")
+		m, _ = m.Update(specialKeyPress(tea.KeyEnter))
+		m = typeString(t, m, token)
+		return m
+	}
+
+	t.Run("left arrow moves cursor left", func(t *testing.T) {
+		m := setupToken(t, "abcde")
+		m, _ = m.Update(specialKeyPress(tea.KeyLeft))
+
+		sm := asSetup(t, m)
+		assert.Equal(t, 4, sm.cursor)
+		assert.Equal(t, "abcde", sm.Token())
+	})
+
+	t.Run("left arrow stops at position 0", func(t *testing.T) {
+		m := setupToken(t, "ab")
+		m, _ = m.Update(specialKeyPress(tea.KeyLeft))
+		m, _ = m.Update(specialKeyPress(tea.KeyLeft))
+		m, _ = m.Update(specialKeyPress(tea.KeyLeft)) // extra, should stay at 0
+
+		sm := asSetup(t, m)
+		assert.Equal(t, 0, sm.cursor)
+	})
+
+	t.Run("right arrow moves cursor right", func(t *testing.T) {
+		m := setupToken(t, "abcde")
+		// Move to start, then right
+		m, _ = m.Update(specialKeyPress(tea.KeyHome))
+		m, _ = m.Update(specialKeyPress(tea.KeyRight))
+
+		sm := asSetup(t, m)
+		assert.Equal(t, 1, sm.cursor)
+	})
+
+	t.Run("right arrow stops at end", func(t *testing.T) {
+		m := setupToken(t, "abc")
+		// Already at end, press right
+		m, _ = m.Update(specialKeyPress(tea.KeyRight))
+
+		sm := asSetup(t, m)
+		assert.Equal(t, 3, sm.cursor)
+	})
+
+	t.Run("home moves cursor to 0", func(t *testing.T) {
+		m := setupToken(t, "abcde")
+		m, _ = m.Update(specialKeyPress(tea.KeyHome))
+
+		sm := asSetup(t, m)
+		assert.Equal(t, 0, sm.cursor)
+	})
+
+	t.Run("ctrl+a moves cursor to 0", func(t *testing.T) {
+		m := setupToken(t, "abcde")
+		m, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: 'a', Mod: tea.ModCtrl}))
+
+		sm := asSetup(t, m)
+		assert.Equal(t, 0, sm.cursor)
+	})
+
+	t.Run("end moves cursor to end", func(t *testing.T) {
+		m := setupToken(t, "abcde")
+		m, _ = m.Update(specialKeyPress(tea.KeyHome))
+		m, _ = m.Update(specialKeyPress(tea.KeyEnd))
+
+		sm := asSetup(t, m)
+		assert.Equal(t, 5, sm.cursor)
+	})
+
+	t.Run("ctrl+e moves cursor to end", func(t *testing.T) {
+		m := setupToken(t, "abcde")
+		m, _ = m.Update(specialKeyPress(tea.KeyHome))
+		m, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: 'e', Mod: tea.ModCtrl}))
+
+		sm := asSetup(t, m)
+		assert.Equal(t, 5, sm.cursor)
+	})
+
+	t.Run("delete removes character at cursor", func(t *testing.T) {
+		m := setupToken(t, "abcde")
+		// Move cursor to position 2 (before 'c')
+		m, _ = m.Update(specialKeyPress(tea.KeyHome))
+		m, _ = m.Update(specialKeyPress(tea.KeyRight))
+		m, _ = m.Update(specialKeyPress(tea.KeyRight))
+		m, _ = m.Update(specialKeyPress(tea.KeyDelete))
+
+		sm := asSetup(t, m)
+		assert.Equal(t, "abde", sm.Token())
+		assert.Equal(t, 2, sm.cursor)
+	})
+
+	t.Run("delete at end does nothing", func(t *testing.T) {
+		m := setupToken(t, "abc")
+		m, _ = m.Update(specialKeyPress(tea.KeyDelete))
+
+		sm := asSetup(t, m)
+		assert.Equal(t, "abc", sm.Token())
+		assert.Equal(t, 3, sm.cursor)
+	})
+
+	t.Run("typing mid-string inserts at cursor", func(t *testing.T) {
+		m := setupToken(t, "abde")
+		// Move cursor to position 2, then type 'c'
+		m, _ = m.Update(specialKeyPress(tea.KeyHome))
+		m, _ = m.Update(specialKeyPress(tea.KeyRight))
+		m, _ = m.Update(specialKeyPress(tea.KeyRight))
+		m = typeString(t, m, "c")
+
+		sm := asSetup(t, m)
+		assert.Equal(t, "abcde", sm.Token())
+		assert.Equal(t, 3, sm.cursor)
+	})
+}
+
 func TestSetup_GhostText(t *testing.T) {
 	t.Run("shows full suggestion when empty", func(t *testing.T) {
 		m := NewSetupModel()
