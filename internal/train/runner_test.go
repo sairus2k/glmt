@@ -35,6 +35,8 @@ func TestRunnerRun(t *testing.T) {
 		mrs  []*gitlab.MergeRequest
 		// setup configures the mock client
 		setup func(m *MockClient)
+		// configRunner optionally tweaks runner settings before Run
+		configRunner func(r *Runner)
 		// assertions on the result
 		assertResult func(t *testing.T, result *Result)
 		// assertions on mock calls
@@ -590,6 +592,37 @@ func TestRunnerRun(t *testing.T) {
 				assert.GreaterOrEqual(t, len(getMRCalls), 3, "should retry stale merge status")
 			},
 		},
+		{
+			name: "main pipeline timeout - never appears",
+			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
+			setup: func(m *MockClient) {
+				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					return &gitlab.MergeRequest{
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
+						DetailedMergeStatus: "mergeable",
+					}, nil
+				}
+				// Pipeline never appears
+				m.ListPipelinesFn = func(_ context.Context, _ int, _, _, _ string) ([]*gitlab.Pipeline, error) {
+					return nil, nil
+				}
+			},
+			configRunner: func(r *Runner) {
+				r.MaxMainPipelineAttempts = 2
+			},
+			assertResult: func(t *testing.T, result *Result) {
+				require.Len(t, result.MRResults, 1)
+				assert.Equal(t, MRStatusMerged, result.MRResults[0].Status)
+				assert.Empty(t, result.MainPipelineStatus)
+				assert.Empty(t, result.MainPipelineURL)
+			},
+			assertCalls: func(t *testing.T, m *MockClient) {
+				listCalls := m.CallsTo("ListPipelines")
+				assert.Len(t, listCalls, 2, "should poll exactly MaxMainPipelineAttempts times")
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -598,6 +631,9 @@ func TestRunnerRun(t *testing.T) {
 			tt.setup(mock)
 
 			runner := newTestRunner(mock)
+			if tt.configRunner != nil {
+				tt.configRunner(runner)
+			}
 
 			ctx := context.Background()
 			if tt.cancelCtx {
