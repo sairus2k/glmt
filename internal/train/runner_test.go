@@ -1043,3 +1043,49 @@ func TestNewRunner(t *testing.T) {
 	assert.NotZero(t, r.PollRebaseInterval)
 	assert.NotZero(t, r.PollPipelineInterval)
 }
+
+func TestRunnerContextCancelledMidTrain(t *testing.T) {
+	// Simulates user pressing Ctrl+C after MR 1 merges but before MR 2 starts.
+	// Verifies partial results are preserved and main pipeline wait is skipped.
+	ctx, cancel := context.WithCancel(context.Background())
+
+	mock := &MockClient{}
+	mock.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+		return &gitlab.MergeRequest{
+			IID:                 mrIID,
+			SHA:                 fmt.Sprintf("sha-%d", mrIID),
+			TargetBranch:        "main",
+			DetailedMergeStatus: "mergeable",
+		}, nil
+	}
+	mock.MergeMergeRequestFn = func(_ context.Context, _ int, mrIID int, _ string) (string, error) {
+		if mrIID == 1 {
+			cancel() // simulate Ctrl+C right after MR 1 merge succeeds
+		}
+		return fmt.Sprintf("merge-commit-sha-%d", mrIID), nil
+	}
+
+	runner := newTestRunner(mock)
+	mrs := []*gitlab.MergeRequest{makeMR(1, "MR 1"), makeMR(2, "MR 2"), makeMR(3, "MR 3")}
+	result, err := runner.Run(ctx, mrs)
+
+	require.Error(t, err, "should return context error")
+	require.Len(t, result.MRResults, 3)
+
+	assert.Equal(t, MRStatusMerged, result.MRResults[0].Status,
+		"MR 1 should be merged before cancellation")
+	assert.Equal(t, MRStatusPending, result.MRResults[1].Status,
+		"MR 2 should be pending — cancelled before processing")
+	assert.Equal(t, MRStatusPending, result.MRResults[2].Status,
+		"MR 3 should be pending — cancelled before processing")
+	assert.Empty(t, result.MainPipelineStatus,
+		"main pipeline should not be awaited when cancelled mid-train")
+	assert.Empty(t, result.MainPipelineURL)
+
+	rebaseCalls := mock.CallsTo("RebaseMergeRequest")
+	assert.Len(t, rebaseCalls, 1, "should only rebase MR 1")
+	mergeCalls := mock.CallsTo("MergeMergeRequest")
+	assert.Len(t, mergeCalls, 1, "should only merge MR 1")
+	listCalls := mock.CallsTo("ListPipelines")
+	assert.Empty(t, listCalls, "should not wait for main pipeline after cancellation")
+}
