@@ -593,6 +593,55 @@ func TestRunnerRun(t *testing.T) {
 			},
 		},
 		{
+			name: "checking status resets stale retry counter",
+			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
+			setup: func(m *MockClient) {
+				// Simulate GitLab recalculating merge status after rebase:
+				// ci_must_pass → checking → ci_must_pass → unchecked → mergeable
+				// Without the staleRetries reset on "checking"/"unchecked",
+				// staleRetries would reach 2 > MaxMergeStatusRetries(1) and skip.
+				getMRCallCount := 0
+				statuses := []string{"ci_must_pass", "checking", "ci_must_pass", "unchecked", "mergeable"}
+				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					idx := getMRCallCount
+					if idx >= len(statuses) {
+						idx = len(statuses) - 1
+					}
+					getMRCallCount++
+					return &gitlab.MergeRequest{
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
+						DetailedMergeStatus: statuses[idx],
+					}, nil
+				}
+				m.ListPipelinesFn = func(_ context.Context, _ int, ref, _, sha string) ([]*gitlab.Pipeline, error) {
+					if ref == "main" && sha == "merge-commit-sha-1" {
+						return []*gitlab.Pipeline{
+							{ID: 200, Status: "success", Ref: "main", WebURL: "http://example.com/pipelines/200"},
+						}, nil
+					}
+					return nil, nil
+				}
+			},
+			configRunner: func(r *Runner) {
+				// Low threshold: without staleRetries reset, the second "ci_must_pass"
+				// would cause staleRetries(2) > MaxMergeStatusRetries(1) and fail
+				r.MaxMergeStatusRetries = 1
+			},
+			assertResult: func(t *testing.T, result *Result) {
+				require.Len(t, result.MRResults, 1)
+				assert.Equal(t, MRStatusMerged, result.MRResults[0].Status,
+					"MR should merge: 'checking'/'unchecked' statuses must reset the stale counter")
+				assert.Empty(t, result.MRResults[0].SkipReason)
+			},
+			assertCalls: func(t *testing.T, m *MockClient) {
+				getMRCalls := m.CallsTo("GetMergeRequest")
+				assert.Equal(t, 5, len(getMRCalls),
+					"should poll through all status transitions before merging")
+			},
+		},
+		{
 			name: "main pipeline timeout - never appears",
 			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
 			setup: func(m *MockClient) {
