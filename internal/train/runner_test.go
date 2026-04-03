@@ -737,6 +737,55 @@ func TestRunnerRun(t *testing.T) {
 			},
 		},
 		{
+			name: "merge 405 then MR becomes non-mergeable during retry",
+			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
+			setup: func(m *MockClient) {
+				// Simulate: initial merge returns 405, but by the time
+				// retryMergeOn405 calls waitForMergeReady, GitLab reports
+				// the MR as permanently non-mergeable (e.g., a force-push
+				// introduced a conflict while the merge was in flight).
+				getMRCallCount := 0
+				m.GetMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					getMRCallCount++
+					if getMRCallCount == 1 {
+						// First call (initial waitForMergeReady): mergeable
+						return &gitlab.MergeRequest{
+							IID:                 mrIID,
+							SHA:                 fmt.Sprintf("sha-%d", mrIID),
+							TargetBranch:        "main",
+							DetailedMergeStatus: "mergeable",
+						}, nil
+					}
+					// Subsequent calls (retry waitForMergeReady): stuck on "conflict"
+					return &gitlab.MergeRequest{
+						IID:                 mrIID,
+						SHA:                 fmt.Sprintf("sha-%d", mrIID),
+						TargetBranch:        "main",
+						DetailedMergeStatus: "conflict",
+					}, nil
+				}
+				m.MergeMergeRequestFn = func(_ context.Context, _ int, _ int, _ string) (string, error) {
+					return "", gitlab.ErrNotMergeable
+				}
+			},
+			configRunner: func(r *Runner) {
+				r.MaxMergeStatusRetries = 1
+			},
+			assertResult: func(t *testing.T, result *Result) {
+				require.Len(t, result.MRResults, 1)
+				assert.Equal(t, MRStatusSkipped, result.MRResults[0].Status)
+				assert.Contains(t, result.MRResults[0].SkipReason, "not mergeable on 405 retry")
+			},
+			assertCalls: func(t *testing.T, m *MockClient) {
+				mergeCalls := m.CallsTo("MergeMergeRequest")
+				assert.Len(t, mergeCalls, 1, "should only attempt initial merge, not retry merge")
+				getMRCalls := m.CallsTo("GetMergeRequest")
+				// 1 initial waitForMergeReady + MaxMergeStatusRetries+1 retry polls
+				assert.Equal(t, 3, len(getMRCalls),
+					"1 initial ready check + 2 retry polls (initial+1 retry) before giving up")
+			},
+		},
+		{
 			name: "main pipeline running then succeeds",
 			mrs:  []*gitlab.MergeRequest{makeMR(1, "MR 1")},
 			setup: func(m *MockClient) {
