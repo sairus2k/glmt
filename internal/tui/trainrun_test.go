@@ -23,19 +23,20 @@ func newTestTrainModel() TrainRunModel {
 
 // sendTrainKey sends a KeyPressMsg to a TrainRunModel and returns the updated model and command.
 func sendTrainKey(m TrainRunModel, key string) (TrainRunModel, tea.Cmd) {
-	var code rune
-	var text string
+	var msg tea.KeyPressMsg
 	switch key {
-	case "q":
-		code = 'q'
-		text = "q"
+	case "esc":
+		msg = tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape})
+	case "enter":
+		msg = tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter})
+	case "ctrl+c":
+		msg = tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl})
 	default:
 		if len(key) == 1 {
-			code = rune(key[0])
-			text = key
+			msg = tea.KeyPressMsg(tea.Key{Code: rune(key[0]), Text: key})
 		}
 	}
-	updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: code, Text: text}))
+	updated, cmd := m.Update(msg)
 	return updated.(TrainRunModel), cmd
 }
 
@@ -374,4 +375,111 @@ func TestTrainRun_ViewShowsSkipped(t *testing.T) {
 	// Log entry should show the skip step with MR ref
 	assert.Contains(t, viewStr, "!42")
 	assert.Contains(t, viewStr, "Skipped: rebase conflict")
+}
+
+// --- Key handling tests for done/aborted/running states ---
+
+func makeDoneModel() TrainRunModel {
+	m := newTestTrainModel()
+	result, _ := m.Update(trainDoneMsg{result: &train.Result{}})
+	return result.(TrainRunModel)
+}
+
+func makeAbortedModel() TrainRunModel {
+	m := newTestTrainModel()
+	m, _ = sendTrainKey(m, "q") // abort while running
+	return m
+}
+
+func TestTrainRun_QuitWhenDone(t *testing.T) {
+	m := makeDoneModel()
+	_, cmd := sendTrainKey(m, "q")
+
+	require.NotNil(t, cmd)
+	msg := cmd()
+	assert.IsType(t, tea.QuitMsg{}, msg)
+}
+
+func TestTrainRun_CtrlCWhenDone(t *testing.T) {
+	m := makeDoneModel()
+	_, cmd := sendTrainKey(m, "ctrl+c")
+
+	require.NotNil(t, cmd)
+	msg := cmd()
+	assert.IsType(t, tea.QuitMsg{}, msg)
+}
+
+func TestTrainRun_BackWhenDone(t *testing.T) {
+	m := makeDoneModel()
+	_, cmd := sendTrainKey(m, "esc")
+
+	require.NotNil(t, cmd)
+	msg := cmd()
+	_, ok := msg.(trainBackMsg)
+	assert.True(t, ok)
+}
+
+func TestTrainRun_EnterWhenDone(t *testing.T) {
+	m := makeDoneModel()
+	_, cmd := sendTrainKey(m, "enter")
+
+	require.NotNil(t, cmd)
+	msg := cmd()
+	_, ok := msg.(trainBackMsg)
+	assert.True(t, ok)
+}
+
+func TestTrainRun_RandomKeyWhenDone(t *testing.T) {
+	m := makeDoneModel()
+	_, cmd := sendTrainKey(m, "x")
+
+	assert.Nil(t, cmd)
+}
+
+func TestTrainRun_EscAbortsWhenRunning(t *testing.T) {
+	m := newTestTrainModel()
+	m, cmd := sendTrainKey(m, "esc")
+
+	assert.True(t, m.Aborted())
+	require.NotNil(t, cmd)
+	msg := cmd()
+	_, ok := msg.(trainAbortMsg)
+	assert.True(t, ok)
+}
+
+func TestTrainRun_CtrlCAbortsWhenRunning(t *testing.T) {
+	m := newTestTrainModel()
+	m, cmd := sendTrainKey(m, "ctrl+c")
+
+	assert.True(t, m.Aborted())
+	require.NotNil(t, cmd)
+	msg := cmd()
+	_, ok := msg.(trainAbortMsg)
+	assert.True(t, ok)
+}
+
+func TestTrainRun_RandomKeyWhenRunning(t *testing.T) {
+	m := newTestTrainModel()
+	m, cmd := sendTrainKey(m, "x")
+
+	assert.False(t, m.Aborted())
+	assert.Nil(t, cmd)
+}
+
+func TestTrainRun_BackWhenAborted(t *testing.T) {
+	m := makeAbortedModel()
+	_, cmd := sendTrainKey(m, "enter")
+
+	require.NotNil(t, cmd)
+	msg := cmd()
+	_, ok := msg.(trainBackMsg)
+	assert.True(t, ok)
+}
+
+func TestTrainRun_MapStepStatus_MergeSHAMismatch(t *testing.T) {
+	assert.Equal(t, StepRunning, mapStepStatus("merge_sha_mismatch"))
+}
+
+func TestTrainRun_MapStepStatus_UnknownStep(t *testing.T) {
+	assert.Equal(t, StepPending, mapStepStatus("some_unknown_step"))
 }
