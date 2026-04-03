@@ -232,6 +232,27 @@ func TestGetMergeRequestPipeline(t *testing.T) {
 	assert.Empty(t, mergeStatus)
 }
 
+func TestGetMergeRequestPipeline_NoPipeline(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/v4/projects/1/merge_requests/10", r.URL.Path)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{
+			"iid": 10, "title": "MR", "source_branch": "b", "target_branch": "main", "sha": "abc",
+			"head_pipeline": null,
+			"detailed_merge_status": "ci_still_running"
+		}`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	pipeline, mergeStatus, err := client.GetMergeRequestPipeline(context.Background(), 1, 10)
+	require.NoError(t, err)
+	assert.Nil(t, pipeline)
+	assert.Equal(t, "ci_still_running", mergeStatus)
+}
+
 func TestListPipelines(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
