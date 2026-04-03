@@ -544,6 +544,120 @@ func TestListMergeRequestsFull_ProjectNotFound(t *testing.T) {
 	assert.Nil(t, mrs)
 }
 
+func TestRebaseMergeRequest_RebaseAPIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v4/projects/1/merge_requests/10/rebase":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = fmt.Fprint(w, `{"message": "Internal Server Error"}`)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	mr, err := client.RebaseMergeRequest(context.Background(), 1, 10)
+	require.Error(t, err)
+	assert.Nil(t, mr)
+	assert.Contains(t, err.Error(), "triggering rebase for MR 10")
+}
+
+func TestRebaseMergeRequest_ContextCancellation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v4/projects/1/merge_requests/10/rebase":
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = fmt.Fprint(w, `{"rebase_in_progress": true}`)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately so ctx.Done() is selectable before polling
+
+	client := newTestClient(t, server)
+	mr, err := client.RebaseMergeRequest(ctx, 1, 10)
+	require.Error(t, err)
+	assert.Nil(t, mr)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRebaseMergeRequest_PollingError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v4/projects/1/merge_requests/10/rebase":
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = fmt.Fprint(w, `{"rebase_in_progress": true}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v4/projects/1/merge_requests/10":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = fmt.Fprint(w, `{"message": "Internal Server Error"}`)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	mr, err := client.RebaseMergeRequest(context.Background(), 1, 10)
+	require.Error(t, err)
+	assert.Nil(t, mr)
+	assert.Contains(t, err.Error(), "polling rebase status for MR 10")
+}
+
+func TestGetMergeRequest_CommitsFetchFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		w.Header().Set("Content-Type", "application/json")
+
+		switch r.URL.Path {
+		case "/api/v4/projects/1/merge_requests/10":
+			_, _ = fmt.Fprint(w, `{
+				"iid": 10,
+				"title": "Add feature X",
+				"author": {"username": "alice"},
+				"source_branch": "feature-x",
+				"target_branch": "main",
+				"sha": "abc123",
+				"created_at": "2025-01-15T10:00:00Z",
+				"draft": false,
+				"head_pipeline": {"id": 100, "status": "success", "ref": "feature-x", "sha": "abc123", "web_url": "https://gitlab.com/pipeline/100"},
+				"detailed_merge_status": "mergeable",
+				"blocking_discussions_resolved": true,
+				"web_url": "https://gitlab.com/mr/10"
+			}`)
+		case "/api/v4/projects/1/merge_requests/10/commits":
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = fmt.Fprint(w, `{"message": "Internal Server Error"}`)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	mr, err := client.GetMergeRequest(context.Background(), 1, 10)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+
+	// MR fields are populated despite commits fetch failure
+	assert.Equal(t, 10, mr.IID)
+	assert.Equal(t, "Add feature X", mr.Title)
+	assert.Equal(t, "alice", mr.Author)
+	assert.Equal(t, "feature-x", mr.SourceBranch)
+	assert.Equal(t, "main", mr.TargetBranch)
+	assert.Equal(t, "abc123", mr.SHA)
+	assert.Equal(t, "success", mr.HeadPipelineStatus)
+	// CommitCount stays 0 — graceful degradation
+	assert.Equal(t, 0, mr.CommitCount)
+}
+
 func TestListProjects(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
