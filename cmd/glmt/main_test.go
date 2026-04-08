@@ -394,6 +394,7 @@ func TestResolveCredentials(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			homeDir := t.TempDir()
 			t.Setenv("HOME", homeDir)
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(homeDir, ".config"))
 
 			if tt.glabConfig != "" {
 				writeGlabConfig(t, tt.glabConfig)
