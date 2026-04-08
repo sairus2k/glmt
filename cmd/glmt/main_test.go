@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sairus2k/glmt/internal/auth"
 	"github.com/sairus2k/glmt/internal/config"
 	"github.com/sairus2k/glmt/internal/gitlab"
 	"github.com/sairus2k/glmt/internal/train"
@@ -220,6 +221,17 @@ func captureStdout(t *testing.T, fn func()) string {
 	return buf.String()
 }
 
+func writeGlabConfig(t *testing.T, content string) {
+	t.Helper()
+
+	configDir, err := os.UserConfigDir()
+	require.NoError(t, err)
+
+	glabDir := filepath.Join(configDir, "glab-cli")
+	require.NoError(t, os.MkdirAll(glabDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(glabDir, "config.yml"), []byte(content), 0o600))
+}
+
 func TestPrintTrainResults(t *testing.T) {
 	t.Run("nil result returns error", func(t *testing.T) {
 		err := printTrainResults(nil)
@@ -318,6 +330,91 @@ func TestBuildLogFunc(t *testing.T) {
 		assert.Contains(t, output, "[pipeline] waiting")
 		assert.NotContains(t, output, "MR")
 	})
+}
+
+func TestResolveCredentials(t *testing.T) {
+	tests := []struct {
+		name        string
+		cfgHost     string
+		cfgToken    string
+		flagHost    string
+		flagToken   string
+		glabConfig  string
+		want        *auth.Credentials
+		wantCfgHost string
+	}{
+		{
+			name:    "glab credentials from config host persist cleaned host",
+			cfgHost: "https//gitlab.config.example.com",
+			glabConfig: `hosts:
+  https//gitlab.config.example.com:
+    token: glpat-glab
+    api_protocol: https
+`,
+			want: &auth.Credentials{
+				Host:     "gitlab.config.example.com",
+				Token:    "glpat-glab",
+				Protocol: "https",
+			},
+			wantCfgHost: "gitlab.config.example.com",
+		},
+		{
+			name:      "cli host selects glab credentials without mutating saved host",
+			cfgHost:   "saved.example.com",
+			cfgToken:  "saved-token",
+			flagHost:  "gitlab.flag.example.com",
+			flagToken: "flag-token",
+			glabConfig: `hosts:
+  gitlab.flag.example.com:
+    token: glpat-from-glab
+    api_protocol: http
+`,
+			want: &auth.Credentials{
+				Host:     "gitlab.flag.example.com",
+				Token:    "glpat-from-glab",
+				Protocol: "http",
+			},
+			wantCfgHost: "saved.example.com",
+		},
+		{
+			name:        "falls back to effective host and token when glab is absent",
+			cfgHost:     "saved.example.com",
+			cfgToken:    "saved-token",
+			flagHost:    "flag.example.com",
+			want:        &auth.Credentials{Host: "flag.example.com", Token: "saved-token", Protocol: "https"},
+			wantCfgHost: "saved.example.com",
+		},
+		{
+			name:        "returns nil when no credentials are available",
+			wantCfgHost: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			homeDir := t.TempDir()
+			t.Setenv("HOME", homeDir)
+
+			if tt.glabConfig != "" {
+				writeGlabConfig(t, tt.glabConfig)
+			}
+
+			cfg := config.DefaultConfig()
+			cfg.GitLab.Host = tt.cfgHost
+			cfg.GitLab.Token = tt.cfgToken
+
+			got := resolveCredentials(cfg, tt.flagHost, tt.flagToken)
+
+			if tt.want == nil {
+				require.Nil(t, got)
+			} else {
+				require.NotNil(t, got)
+				assert.Equal(t, *tt.want, *got)
+			}
+
+			assert.Equal(t, tt.wantCfgHost, cfg.GitLab.Host)
+		})
+	}
 }
 
 // --- prepareNonInteractive tests ---
