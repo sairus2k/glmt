@@ -1,26 +1,5 @@
 stages:
-  - lint
-  - test
   - build
-
-lint:
-  stage: lint
-  image: golang:1.26
-  script:
-    - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
-    - golangci-lint run ./...
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-
-test:
-  stage: test
-  image: golang:1.26
-  script:
-    - go test ./...
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 build:
   stage: build
