@@ -10,6 +10,7 @@
       "automerge": true
     }
   ],
+  "postUpdateOptions": ["gomodTidy"],
   "platformAutomerge": true,
   "prConcurrentLimit": 1
 }
