@@ -5,7 +5,7 @@ import (
 	"runtime"
 )
 
-func openBrowser(url string) error {
+var openBrowser = func(url string) error {
 	switch runtime.GOOS {
 	case "darwin":
 		return exec.Command("open", url).Start()

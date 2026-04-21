@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -31,6 +32,18 @@ func sendTrainKey(m TrainRunModel, key string) (TrainRunModel, tea.Cmd) {
 		msg = tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter})
 	case "ctrl+c":
 		msg = tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl})
+	case "up":
+		msg = tea.KeyPressMsg(tea.Key{Code: tea.KeyUp})
+	case "down":
+		msg = tea.KeyPressMsg(tea.Key{Code: tea.KeyDown})
+	case "pgup":
+		msg = tea.KeyPressMsg(tea.Key{Code: tea.KeyPgUp})
+	case "pgdown":
+		msg = tea.KeyPressMsg(tea.Key{Code: tea.KeyPgDown})
+	case "home":
+		msg = tea.KeyPressMsg(tea.Key{Code: tea.KeyHome})
+	case "end":
+		msg = tea.KeyPressMsg(tea.Key{Code: tea.KeyEnd})
 	default:
 		if len(key) == 1 {
 			msg = tea.KeyPressMsg(tea.Key{Code: rune(key[0]), Text: key})
@@ -482,4 +495,292 @@ func TestTrainRun_MapStepStatus_MergeSHAMismatch(t *testing.T) {
 
 func TestTrainRun_MapStepStatus_UnknownStep(t *testing.T) {
 	assert.Equal(t, StepPending, mapStepStatus("some_unknown_step"))
+}
+
+// --- Viewport windowing and open-pipeline-URL key ---
+
+// manyStepTrainModel builds a TrainRunModel with enough steps to overflow any
+// reasonable contentHeight, including a main pipeline step with a URL.
+func manyStepTrainModel(t *testing.T, height int) TrainRunModel {
+	t.Helper()
+	m := newTestTrainModel()
+	for _, mr := range []*gitlab.MergeRequest{trainMR1, trainMR2, trainMR3} {
+		steps := []trainStepMsg{
+			{mrIID: mr.IID, step: "rebase_wait", message: "Rebasing..."},
+			{mrIID: mr.IID, step: "rebase", message: "OK"},
+			{mrIID: mr.IID, step: "pipeline_wait", message: "Waiting for pipeline..."},
+			{mrIID: mr.IID, step: "pipeline_success", message: "Pipeline passed"},
+			{mrIID: mr.IID, step: "merge_wait", message: "Waiting for merge readiness..."},
+			{mrIID: mr.IID, step: "merge_attempt", message: "Merging with SHA guard..."},
+			{mrIID: mr.IID, step: "merge", message: "abc123"},
+		}
+		for _, s := range steps {
+			updated, _ := m.Update(s)
+			m = updated.(TrainRunModel)
+		}
+	}
+	// Main pipeline with URL.
+	for _, s := range []trainStepMsg{
+		{mrIID: 0, step: "main_pipeline_wait", message: "Waiting for main pipeline..."},
+		{mrIID: 0, step: "main_pipeline_wait", message: "https://gitlab.example.com/pipeline/777"},
+	} {
+		updated, _ := m.Update(s)
+		m = updated.(TrainRunModel)
+	}
+	m.contentHeight = height
+	return m
+}
+
+func TestTrainRun_ViewFitsInContentHeight(t *testing.T) {
+	m := manyStepTrainModel(t, 10)
+	view := m.View()
+
+	rendered := strings.Split(view.Content, "\n")
+	assert.LessOrEqual(t, len(rendered), m.contentHeight, "view must not exceed contentHeight")
+}
+
+func TestTrainRun_AutoFollowKeepsLatestVisible(t *testing.T) {
+	m := manyStepTrainModel(t, 8)
+	// Latest emitted step carries the URL — must appear in the rendered view.
+	view := m.View()
+	assert.Contains(t, view.Content, "https://gitlab.example.com/pipeline/777")
+}
+
+func TestTrainRun_ScrollUpDisengagesAutoFollow(t *testing.T) {
+	m := manyStepTrainModel(t, 8)
+	assert.True(t, m.autoFollow)
+
+	m, _ = sendTrainKey(m, "up")
+	assert.False(t, m.autoFollow)
+	assert.Positive(t, m.scrollOffset)
+}
+
+func TestTrainRun_EndReengagesAutoFollow(t *testing.T) {
+	m := manyStepTrainModel(t, 8)
+
+	// Scroll up a few times to disengage auto-follow.
+	for range 3 {
+		m, _ = sendTrainKey(m, "up")
+	}
+	assert.False(t, m.autoFollow)
+
+	m, _ = sendTrainKey(m, "end")
+	assert.True(t, m.autoFollow)
+
+	view := m.View()
+	assert.Contains(t, view.Content, "https://gitlab.example.com/pipeline/777")
+}
+
+func TestTrainRun_ScrollIndicators(t *testing.T) {
+	m := manyStepTrainModel(t, 8)
+
+	// Auto-follow at bottom → only ↑ shown.
+	view := m.View()
+	assert.Contains(t, view.Content, "↑ more above")
+	assert.NotContains(t, view.Content, "↓ more below")
+
+	// Scroll to top → only ↓ shown.
+	m, _ = sendTrainKey(m, "home")
+	view = m.View()
+	assert.NotContains(t, view.Content, "↑ more above")
+	assert.Contains(t, view.Content, "↓ more below")
+
+	// Scroll down by one from top → both shown.
+	m, _ = sendTrainKey(m, "down")
+	view = m.View()
+	assert.Contains(t, view.Content, "↑ more above")
+	assert.Contains(t, view.Content, "↓ more below")
+}
+
+func TestTrainRun_OpenKeyNoopWithoutURL(t *testing.T) {
+	captured := ""
+	prev := openBrowser
+	openBrowser = func(url string) error {
+		captured = url
+		return nil
+	}
+	defer func() { openBrowser = prev }()
+
+	m := newTestTrainModel()
+	before := m
+	m, cmd := sendTrainKey(m, "o")
+
+	assert.Nil(t, cmd)
+	assert.Empty(t, captured, "openBrowser must not be invoked without a URL")
+	assert.Equal(t, before.scrollOffset, m.scrollOffset)
+	assert.Equal(t, before.autoFollow, m.autoFollow)
+	assert.False(t, m.aborted)
+}
+
+func TestTrainRun_OpenKeyInvokesBrowserWithURL(t *testing.T) {
+	captured := ""
+	prev := openBrowser
+	openBrowser = func(url string) error {
+		captured = url
+		return nil
+	}
+	defer func() { openBrowser = prev }()
+
+	m := newTestTrainModel()
+	updated, _ := m.Update(trainStepMsg{
+		mrIID:   0,
+		step:    "main_pipeline_wait",
+		message: "https://gitlab.example.com/pipeline/42",
+	})
+	m = updated.(TrainRunModel)
+
+	_, cmd := sendTrainKey(m, "o")
+	assert.Nil(t, cmd)
+	assert.Equal(t, "https://gitlab.example.com/pipeline/42", captured)
+}
+
+// TestTrainRun_ViewRendersAtLeastOneRowAutoFollow guards against a bug where
+// a tight contentHeight combined with autoFollow=true produced an empty view
+// because scrollOffset was clamped past the last renderable position.
+func TestTrainRun_ViewRendersAtLeastOneRowAutoFollow(t *testing.T) {
+	for _, ch := range []int{1, 2, 3} {
+		m := manyStepTrainModel(t, ch)
+		assert.True(t, m.autoFollow, "ch=%d precondition: autoFollow should be true", ch)
+		view := m.View()
+		assert.NotEmptyf(t, view.Content, "ch=%d: autoFollow view must not be empty", ch)
+	}
+}
+
+// TestTrainRun_ViewNeverExceedsTightContentHeight exercises the corner case
+// where both scroll indicators must appear within a tight contentHeight —
+// previously the two-pass algorithm could emit contentHeight+1 rows.
+func TestTrainRun_ViewNeverExceedsTightContentHeight(t *testing.T) {
+	for _, ch := range []int{1, 2, 3, 4, 5, 6, 8, 12} {
+		m := manyStepTrainModel(t, ch)
+		// Scroll into the middle so both indicators are candidates.
+		m, _ = sendTrainKey(m, "home")
+		for range max(ch/2, 1) {
+			m, _ = sendTrainKey(m, "down")
+		}
+		view := m.View()
+		rendered := strings.Split(view.Content, "\n")
+		assert.LessOrEqualf(t, len(rendered), ch,
+			"contentHeight=%d: rendered %d rows", ch, len(rendered))
+	}
+}
+
+func TestTrainRun_ScrollKeyNoOpWhenContentHeightUnset(t *testing.T) {
+	m := manyStepTrainModel(t, 8)
+	m.contentHeight = 0 // simulate layout not yet computed
+
+	before := m
+	m, _ = sendTrainKey(m, "up")
+	assert.Equal(t, before.scrollOffset, m.scrollOffset)
+	assert.Equal(t, before.autoFollow, m.autoFollow)
+}
+
+func TestTrainRun_ScrollKeyNoOpWhenContentFits(t *testing.T) {
+	// Tall viewport, short content → maxOff <= 0, scroll keys must be no-ops.
+	m := newTestTrainModel()
+	m.contentHeight = 500
+
+	before := m
+	m, _ = sendTrainKey(m, "up")
+	assert.Equal(t, before.scrollOffset, m.scrollOffset)
+	assert.Equal(t, before.autoFollow, m.autoFollow)
+}
+
+func TestTrainRun_PgUpPgDown(t *testing.T) {
+	m := manyStepTrainModel(t, 8)
+
+	// pgup disengages auto-follow and scrolls up by visible rows.
+	m, _ = sendTrainKey(m, "pgup")
+	assert.False(t, m.autoFollow)
+	pgupOffset := m.scrollOffset
+	assert.Less(t, pgupOffset, m.scrollOffset+1, "pgup must leave offset below bottom")
+
+	// pgdown eventually re-engages auto-follow at the bottom.
+	m, _ = sendTrainKey(m, "pgdown")
+	m, _ = sendTrainKey(m, "pgdown")
+	assert.True(t, m.autoFollow, "pgdown past maxOff should re-engage auto-follow")
+}
+
+func TestTrainRun_DownAtBottomReengagesAutoFollow(t *testing.T) {
+	m := manyStepTrainModel(t, 8)
+
+	// Scroll up once to disengage.
+	m, _ = sendTrainKey(m, "up")
+	require.False(t, m.autoFollow)
+
+	// Step down until we hit the bottom. With visible=1 content row per press,
+	// one "down" is enough to reach maxOff from one-up-from-bottom.
+	m, _ = sendTrainKey(m, "down")
+	assert.True(t, m.autoFollow, "reaching maxOff via down should re-engage auto-follow")
+}
+
+func TestTrainRun_ViewWhenDone(t *testing.T) {
+	m := newTestTrainModel()
+	m.contentHeight = 100 // all content fits, no scrolling
+	result, _ := m.Update(trainDoneMsg{result: &train.Result{}})
+	m = result.(TrainRunModel)
+
+	view := m.View()
+	assert.Contains(t, view.Content, "Finished processing")
+}
+
+func TestTrainRun_ViewWhenAborted(t *testing.T) {
+	m := newTestTrainModel()
+	m.contentHeight = 100
+	m, _ = sendTrainKey(m, "esc")
+
+	view := m.View()
+	assert.Contains(t, view.Content, "Aborted")
+}
+
+func TestTrainRun_KeyHintsWhenDone(t *testing.T) {
+	m := makeDoneModel()
+	hints := m.KeyHints()
+
+	var keys []string
+	for _, h := range hints {
+		keys = append(keys, h.Key)
+	}
+	assert.Contains(t, keys, "[Enter]")
+	assert.Contains(t, keys, "[q]")
+	assert.NotContains(t, keys, "[Esc]")
+}
+
+func TestTrainRun_KeyHintsWhenRunning(t *testing.T) {
+	m := newTestTrainModel()
+	hints := m.KeyHints()
+
+	var keys []string
+	for _, h := range hints {
+		keys = append(keys, h.Key)
+	}
+	assert.Contains(t, keys, "[Esc]")
+	assert.NotContains(t, keys, "[Enter]")
+}
+
+func TestTrainRun_KeyHintsIncludeOpenOnlyWhenURLPresent(t *testing.T) {
+	m := newTestTrainModel()
+
+	// No URL yet — "[o]" hint absent.
+	hints := m.KeyHints()
+	for _, h := range hints {
+		assert.NotEqual(t, "[o]", h.Key, "[o] hint must be absent before main pipeline URL arrives")
+	}
+
+	// After a main pipeline URL arrives, "[o]" hint present.
+	updated, _ := m.Update(trainStepMsg{
+		mrIID:   0,
+		step:    "main_pipeline_wait",
+		message: "https://gitlab.example.com/pipeline/42",
+	})
+	m = updated.(TrainRunModel)
+
+	hints = m.KeyHints()
+	found := false
+	for _, h := range hints {
+		if h.Key == "[o]" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "[o] hint must appear once a main pipeline URL is known")
 }

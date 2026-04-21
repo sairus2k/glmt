@@ -49,6 +49,9 @@ type TrainRunModel struct {
 	result            *train.Result
 	startTime         time.Time
 	spinnerFrame      int
+	contentHeight     int
+	scrollOffset      int
+	autoFollow        bool
 }
 
 // Messages used by the train run screen.
@@ -74,10 +77,11 @@ func NewTrainRunModel(mrs []*gitlab.MergeRequest) TrainRunModel {
 		mrSteps[i] = MRStepLog{}
 	}
 	return TrainRunModel{
-		mrs:       mrs,
-		mrSteps:   mrSteps,
-		currentMR: 0,
-		startTime: time.Now(),
+		mrs:        mrs,
+		mrSteps:    mrSteps,
+		currentMR:  0,
+		startTime:  time.Now(),
+		autoFollow: true,
 	}
 }
 
@@ -109,6 +113,17 @@ func (m TrainRunModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m TrainRunModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+
+	switch key {
+	case "up", "k", "down", "j", "pgup", "pgdown", "home", "g", "end", "G":
+		return m.handleScrollKey(key), nil
+	case "o":
+		if url := m.mainPipelineURL(); url != "" {
+			_ = openBrowser(url)
+		}
+		return m, nil
+	}
+
 	if m.done || m.aborted {
 		switch key {
 		case "q", "ctrl+c":
@@ -124,6 +139,51 @@ func (m TrainRunModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 		return m, func() tea.Msg { return trainAbortMsg{} }
 	}
 	return m, nil
+}
+
+func (m TrainRunModel) handleScrollKey(key string) TrainRunModel {
+	if m.contentHeight <= 0 {
+		return m
+	}
+
+	total := len(m.contentLines())
+	maxOff, visible, _, _ := m.viewportDims(total)
+	if maxOff <= 0 {
+		return m
+	}
+
+	switch key {
+	case "up", "k":
+		m.scrollOffset--
+		m.autoFollow = false
+	case "down", "j":
+		m.scrollOffset++
+		if m.scrollOffset >= maxOff {
+			m.autoFollow = true
+		}
+	case "pgup":
+		m.scrollOffset -= visible
+		m.autoFollow = false
+	case "pgdown":
+		m.scrollOffset += visible
+		if m.scrollOffset >= maxOff {
+			m.autoFollow = true
+		}
+	case "home", "g":
+		m.scrollOffset = 0
+		m.autoFollow = false
+	case "end", "G":
+		m.scrollOffset = maxOff
+		m.autoFollow = true
+	}
+
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+	if m.scrollOffset > maxOff {
+		m.scrollOffset = maxOff
+	}
+	return m
 }
 
 func (m TrainRunModel) handleStep(msg trainStepMsg) (tea.Model, tea.Cmd) {
@@ -292,6 +352,42 @@ func mapStepStatus(step string) StepStatus {
 
 // View renders the train run screen.
 func (m TrainRunModel) View() tea.View {
+	if m.contentHeight <= 0 {
+		return tea.NewView(m.buildContent())
+	}
+
+	lines := m.contentLines()
+	total := len(lines)
+
+	_, visible, hasTop, hasBot := m.viewportDims(total)
+	end := min(m.scrollOffset+visible, total)
+
+	var out strings.Builder
+	if hasTop {
+		out.WriteString(sFaint.Styled("  ↑ more above"))
+		out.WriteString("\n")
+	}
+	for i := m.scrollOffset; i < end; i++ {
+		out.WriteString(lines[i])
+		if i < end-1 || hasBot {
+			out.WriteString("\n")
+		}
+	}
+	if hasBot {
+		out.WriteString(sFaint.Styled("  ↓ more below"))
+	}
+	return tea.NewView(out.String())
+}
+
+// contentLines returns the unclipped content as a line slice with the trailing
+// blank (produced by buildContent's per-block newline) stripped so total line
+// counts reflect actual rendered rows.
+func (m TrainRunModel) contentLines() []string {
+	return strings.Split(strings.TrimRight(m.buildContent(), "\n"), "\n")
+}
+
+// buildContent renders the full (unclipped) train run content as a single string.
+func (m TrainRunModel) buildContent() string {
 	var b strings.Builder
 
 	// Header
@@ -345,7 +441,7 @@ func (m TrainRunModel) View() tea.View {
 		b.WriteString("\n")
 	}
 
-	return tea.NewView(b.String())
+	return b.String()
 }
 
 // renderStepTree renders a list of steps as a tree with connectors (├─ / └─).
@@ -456,8 +552,82 @@ func (m TrainRunModel) Result() *train.Result { return m.result }
 
 // KeyHints returns the keyboard hints for the train run screen.
 func (m TrainRunModel) KeyHints() []KeyHint {
-	if m.done || m.aborted {
-		return []KeyHint{{"[Enter]", "back"}, {"[q]", "quit"}}
+	hints := []KeyHint{{"[↑↓]", "scroll"}}
+	if m.mainPipelineURL() != "" {
+		hints = append(hints, KeyHint{"[o]", "open pipeline"})
 	}
-	return []KeyHint{{"[Esc]", "abort"}}
+	if m.done || m.aborted {
+		hints = append(hints, KeyHint{"[Enter]", "back"}, KeyHint{"[q]", "quit"})
+	} else {
+		hints = append(hints, KeyHint{"[Esc]", "abort"})
+	}
+	return hints
+}
+
+// viewportDims clamps scrollOffset (applying autoFollow) and returns the
+// derived viewport layout: maxOffset, visible content rows, and whether the
+// top/bottom scroll indicators are shown. Always reserves one row for the top
+// indicator at the bottom-most offset so the last line stays visible while
+// scrolling remains possible.
+func (m *TrainRunModel) viewportDims(total int) (maxOff, visible int, hasTop, hasBot bool) {
+	if total <= m.contentHeight {
+		m.scrollOffset = 0
+		return 0, total, false, false
+	}
+	// At the bottom-most offset, one row is reserved for the top indicator,
+	// so visible = contentHeight - 1.
+	maxOff = total - (m.contentHeight - 1)
+	if m.autoFollow {
+		m.scrollOffset = maxOff
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+	if m.scrollOffset > maxOff {
+		m.scrollOffset = maxOff
+	}
+
+	hasTop = m.scrollOffset > 0
+	hasBot = m.scrollOffset < maxOff
+
+	visible = m.contentHeight
+	if hasTop {
+		visible--
+	}
+	if hasBot {
+		visible--
+	}
+	// Drop indicators if budget is too small to fit them plus a content row
+	// (happens at contentHeight <= 2). Prefer dropping the bottom indicator.
+	if visible < 1 && hasBot {
+		hasBot = false
+		visible++
+	}
+	if visible < 1 && hasTop {
+		hasTop = false
+		visible++
+	}
+	if visible < 1 {
+		visible = 1
+	}
+	// Dropping indicators can leave scrollOffset past the last renderable
+	// position (e.g. autoFollow + contentHeight==1 would otherwise render
+	// nothing). Re-clamp so the content loop always emits >= 1 row.
+	if m.scrollOffset+visible > total {
+		m.scrollOffset = total - visible
+	}
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+	return
+}
+
+// mainPipelineURL returns the most recently observed main pipeline URL, or "" if none.
+func (m TrainRunModel) mainPipelineURL() string {
+	for i := len(m.mainPipelineSteps) - 1; i >= 0; i-- {
+		if strings.HasPrefix(m.mainPipelineSteps[i].Message, "http") {
+			return m.mainPipelineSteps[i].Message
+		}
+	}
+	return ""
 }

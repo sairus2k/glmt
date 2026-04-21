@@ -162,6 +162,7 @@ func (m *AppModel) propagateContentHeight() {
 	m.repoPicker.contentHeight = ch
 	m.mrList.contentHeight = ch
 	m.mrList.width = m.width
+	m.trainRun.contentHeight = ch
 }
 
 func (m AppModel) loginStatus() string {
@@ -320,6 +321,7 @@ func (m AppModel) updateMRList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case startTrainMsg:
 		m.screen = ScreenTrainRun
 		m.trainRun = NewTrainRunModel(msg.mrs)
+		m.propagateContentHeight()
 		return m, tea.Batch(m.startTrain(msg.mrs), spinnerTick())
 	case mrsLoadedMsg:
 		return m.handleMRsLoaded(msg)
