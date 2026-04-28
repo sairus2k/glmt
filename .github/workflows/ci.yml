@@ -32,7 +32,7 @@ jobs:
           go-version: "1.26.x"
       - run: go test -coverprofile=coverage.out ./...
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@299e4b793aaa83bf2aba7c9c14bedbb485688ec4 # v7
+        uses: SonarSource/sonarqube-scan-action@55e44800a8f495208cce6e4e82f5dedb45fcf0ef # v7
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
