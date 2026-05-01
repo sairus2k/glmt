@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	charm.land/bubbletea/v2 v2.0.6
 	github.com/charmbracelet/x/ansi v0.11.7
-	github.com/pelletier/go-toml/v2 v2.3.0
+	github.com/pelletier/go-toml/v2 v2.3.1
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.42.0
 	gitlab.com/gitlab-org/api/client-go/v2 v2.21.0
