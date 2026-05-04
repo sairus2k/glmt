@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -624,9 +625,9 @@ func (m *TrainRunModel) viewportDims(total int) (maxOff, visible int, hasTop, ha
 
 // mainPipelineURL returns the most recently observed main pipeline URL, or "" if none.
 func (m TrainRunModel) mainPipelineURL() string {
-	for i := len(m.mainPipelineSteps) - 1; i >= 0; i-- {
-		if strings.HasPrefix(m.mainPipelineSteps[i].Message, "http") {
-			return m.mainPipelineSteps[i].Message
+	for _, step := range slices.Backward(m.mainPipelineSteps) {
+		if strings.HasPrefix(step.Message, "http") {
+			return step.Message
 		}
 	}
 	return ""
