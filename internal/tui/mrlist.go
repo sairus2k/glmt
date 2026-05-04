@@ -25,6 +25,7 @@ type MRListModel struct {
 	contentHeight int
 	scrollOffset  int
 	width         int
+	helpVisible   bool
 }
 
 // IneligibleMR pairs a merge request with the reason it cannot be selected.
@@ -271,6 +272,19 @@ func (m MRListModel) HasRunningPipelines() bool {
 func (m MRListModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	total := m.totalCount()
 	key := msg.String()
+
+	if m.helpVisible {
+		switch key {
+		case "f1", "esc", "q":
+			m.helpVisible = false
+		}
+		return m, nil
+	}
+
+	if key == "f1" {
+		m.helpVisible = true
+		return m, nil
+	}
 
 	if key == "ctrl+c" || key == "esc" {
 		return m, tea.Quit
@@ -608,6 +622,77 @@ func (m MRListModel) renderIneligibleRow(imr IneligibleMR, idx int, lay tableLay
 	return displayItem{text: lb.String(), lines: lineCount}
 }
 
+// helpEntry pairs a styled icon glyph with a one-line description.
+type helpEntry struct {
+	glyph string
+	desc  string
+}
+
+func helpEntries() []helpEntry {
+	return []helpEntry{
+		{sSelected.Styled("●"), "Selected for the merge train"},
+		{sFaint.Styled("○"), "Eligible, not selected"},
+		{sRunning.Styled(spinnerFrames[0]), "Pipeline running / merge status checking"},
+		{sError.Styled("✗"), "Pipeline failed or merge blocked"},
+		{sFaint.Styled("✎"), "Draft merge request"},
+		{sWarning.Styled("◇"), "Unresolved discussions"},
+		{sWarning.Styled("↻"), "Reviewer requested changes"},
+	}
+}
+
+// renderHelpModal renders the icon-legend modal centered in the body area.
+func (m MRListModel) renderHelpModal() string {
+	title := sBold.Styled("MR Status Icons")
+	entries := helpEntries()
+
+	rows := make([]string, 0, len(entries)+1)
+	rows = append(rows, title)
+	maxRowWidth := ansi.StringWidth(title)
+	for _, e := range entries {
+		row := "  " + e.glyph + "  " + e.desc
+		rows = append(rows, row)
+		if w := ansi.StringWidth(row); w > maxRowWidth {
+			maxRowWidth = w
+		}
+	}
+
+	const sidePad = 2
+	innerWidth := maxRowWidth + sidePad*2
+	top := "┌" + strings.Repeat("─", innerWidth) + "┐"
+	bottom := "└" + strings.Repeat("─", innerWidth) + "┘"
+
+	pad := strings.Repeat(" ", sidePad)
+	boxLines := make([]string, 0, len(rows)+2)
+	boxLines = append(boxLines, top)
+	for _, r := range rows {
+		boxLines = append(boxLines, "│"+pad+padRight(r, maxRowWidth)+pad+"│")
+	}
+	boxLines = append(boxLines, bottom)
+
+	boxWidth := innerWidth + 2
+	leftMargin := ""
+	if m.width > boxWidth {
+		leftMargin = strings.Repeat(" ", (m.width-boxWidth)/2)
+	}
+
+	available := m.contentHeight - mrListHeaderLines
+	topMargin := 0
+	if available > len(boxLines) {
+		topMargin = (available - len(boxLines)) / 2
+	}
+
+	var b strings.Builder
+	for range topMargin {
+		b.WriteString("\n")
+	}
+	for _, line := range boxLines {
+		b.WriteString(leftMargin)
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 // View renders the MR list screen.
 func (m MRListModel) View() tea.View {
 	var b strings.Builder
@@ -617,6 +702,11 @@ func (m MRListModel) View() tea.View {
 	b.WriteString(" ")
 	b.WriteString(sRunning.Styled(m.repoPath))
 	b.WriteString("\n\n")
+
+	if m.helpVisible {
+		b.WriteString(m.renderHelpModal())
+		return tea.NewView(b.String())
+	}
 
 	if m.loading {
 		b.WriteString("  ")
@@ -683,11 +773,15 @@ func (m MRListModel) View() tea.View {
 
 // KeyHints returns the keyboard hints for the current state.
 func (m MRListModel) KeyHints() []KeyHint {
+	if m.helpVisible {
+		return []KeyHint{{"[F1/Esc]", "close help"}}
+	}
 	if m.loading || m.totalCount() == 0 {
 		return []KeyHint{
 			{"[o]", "open"},
 			{"[R]", "refresh"},
 			{"[r]", "change repo"},
+			{"[F1]", "help"},
 			{"[Esc]", "quit"},
 		}
 	}
@@ -699,6 +793,7 @@ func (m MRListModel) KeyHints() []KeyHint {
 		{"[R]", "refresh"},
 		{"[r]", "change repo"},
 		{"[Enter]", "start"},
+		{"[F1]", "help"},
 		{"[Esc]", "quit"},
 	}
 }
@@ -809,6 +904,11 @@ func (m MRListModel) SelectedCount() int {
 // Refreshing returns whether background refresh is active.
 func (m MRListModel) Refreshing() bool {
 	return m.refreshing
+}
+
+// HelpVisible returns whether the icon-legend modal is currently shown.
+func (m MRListModel) HelpVisible() bool {
+	return m.helpVisible
 }
 
 // currentMRURL returns the WebURL of the MR under the cursor.

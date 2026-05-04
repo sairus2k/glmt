@@ -103,6 +103,10 @@ func mrListKey(key string) tea.KeyPressMsg {
 		return specialKeyPress(tea.KeyDown)
 	case "enter":
 		return specialKeyPress(tea.KeyEnter)
+	case "esc":
+		return specialKeyPress(tea.KeyEscape)
+	case "f1":
+		return tea.KeyPressMsg(tea.Key{Code: tea.KeyF1})
 	case "shift+up":
 		return tea.KeyPressMsg(tea.Key{Code: tea.KeyUp, Mod: tea.ModShift})
 	case "shift+down":
@@ -535,6 +539,80 @@ func TestMRList_ViewShowsRefreshingIndicator(t *testing.T) {
 	// The MR list should still be visible.
 	assert.Contains(t, viewStr, eligibleMR1.Title)
 	assert.Contains(t, viewStr, eligibleMR2.Title)
+}
+
+func TestMRList_HelpModalToggle(t *testing.T) {
+	m := loadModel(allFixtureMRs())
+
+	m = sendKey(m, "f1")
+	assert.True(t, m.HelpVisible())
+	view := m.View().Content
+	assert.Contains(t, view, "MR Status Icons")
+	assert.Contains(t, view, "Pipeline failed")
+
+	m = sendKey(m, "f1")
+	assert.False(t, m.HelpVisible())
+	assert.NotContains(t, m.View().Content, "MR Status Icons")
+}
+
+func TestMRList_HelpModalClosesOnEsc(t *testing.T) {
+	m := loadModel(allFixtureMRs())
+
+	m = sendKey(m, "f1")
+	require.True(t, m.HelpVisible())
+
+	updated, cmd := sendKeyCmd(m, "esc")
+	assert.False(t, updated.HelpVisible())
+	assert.Nil(t, cmd, "Esc should close the modal, not quit the app")
+}
+
+func TestMRList_HelpModalClosesOnQ(t *testing.T) {
+	m := loadModel(allFixtureMRs())
+
+	m = sendKey(m, "f1")
+	require.True(t, m.HelpVisible())
+
+	updated, cmd := sendKeyCmd(m, "q")
+	assert.False(t, updated.HelpVisible())
+	assert.Nil(t, cmd, "q should close the modal, not quit the app")
+}
+
+func TestMRList_HelpModalSuppressesKeys(t *testing.T) {
+	m := loadModel(allFixtureMRs())
+
+	m = sendKey(m, "f1")
+	require.True(t, m.HelpVisible())
+
+	cursorBefore := m.Cursor()
+	selectedBefore := m.SelectedCount()
+
+	m = sendKey(m, "down")
+	assert.Equal(t, cursorBefore, m.Cursor(), "down should be ignored while modal open")
+
+	m = sendKey(m, " ")
+	assert.Equal(t, selectedBefore, m.SelectedCount(), "space should be ignored while modal open")
+
+	_, cmd := sendKeyCmd(m, "R")
+	assert.Nil(t, cmd, "R should not trigger refetch while modal open")
+}
+
+func TestMRList_HelpKeyHints(t *testing.T) {
+	m := loadModel(allFixtureMRs())
+
+	hints := m.KeyHints()
+	hasF1 := false
+	for _, h := range hints {
+		if h.Key == "[F1]" {
+			hasF1 = true
+			break
+		}
+	}
+	assert.True(t, hasF1, "closed-modal hints should include [F1]")
+
+	m = sendKey(m, "f1")
+	hints = m.KeyHints()
+	require.Len(t, hints, 1)
+	assert.Equal(t, "[F1/Esc]", hints[0].Key)
 }
 
 func TestIneligibleIcon(t *testing.T) {
