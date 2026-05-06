@@ -126,15 +126,34 @@ func (m RepoPickerModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd
 	}
 }
 
-// updateSearchAndClamp updates the search string, re-filters, and clamps the cursor.
+// updateSearchAndClamp updates the search string, re-filters, and keeps the
+// cursor on the previously highlighted project when it is still visible;
+// otherwise it clamps to the new list bounds.
 func (m *RepoPickerModel) updateSearchAndClamp(search string) {
+	var current *gitlab.Project
+	if m.cursor < len(m.filtered) {
+		current = m.filtered[m.cursor]
+	}
+
 	m.search = search
 	m.filtered = filterProjects(m.projects, m.search)
+
+	if current != nil {
+		for i, p := range m.filtered {
+			if p == current {
+				m.cursor = i
+				m.adjustScroll()
+				return
+			}
+		}
+	}
+
 	if m.cursor >= len(m.filtered) && len(m.filtered) > 0 {
 		m.cursor = len(m.filtered) - 1
 	} else if len(m.filtered) == 0 {
 		m.cursor = 0
 	}
+	m.adjustScroll()
 }
 
 // View renders the repo picker screen.

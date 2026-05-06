@@ -123,11 +123,12 @@ func TestRepoPicker_SearchClear(t *testing.T) {
 	}
 	require.Len(t, m.Filtered(), 1)
 
-	// Clear search with Escape
+	// Clear search with Escape — the previously highlighted repo
+	// (team/project-beta) is still visible, so the cursor follows it.
 	m = repoPickerPressKey(t, m, "escape")
 	assert.Empty(t, m.Search())
 	assert.Len(t, m.Filtered(), 3)
-	assert.Equal(t, 0, m.Cursor())
+	assert.Equal(t, "team/project-beta", m.Filtered()[m.Cursor()].PathWithNamespace)
 }
 
 func TestRepoPicker_SelectProject(t *testing.T) {
@@ -149,6 +150,47 @@ func TestRepoPicker_AutoDetect(t *testing.T) {
 
 	// Cursor should be at index 1 (team/project-beta)
 	assert.Equal(t, 1, m.Cursor())
+}
+
+func TestRepoPicker_SearchKeepsCursorOnHighlightedRepo(t *testing.T) {
+	// Custom fixture: "x" matches B, C, D but not A, so filtering shifts
+	// every kept item's index down by one.
+	projects := []*gitlab.Project{
+		{ID: 1, PathWithNamespace: "team/alpha"},
+		{ID: 2, PathWithNamespace: "team/xbeta"},
+		{ID: 3, PathWithNamespace: "team/xgamma"},
+		{ID: 4, PathWithNamespace: "team/xdelta"},
+	}
+	m := NewRepoPickerModel("")
+	updated, _ := m.Update(projectsLoadedMsg{projects: projects})
+	m = updated.(RepoPickerModel)
+
+	// Highlight "team/xgamma" at index 2.
+	m = repoPickerPressKey(t, m, "down")
+	m = repoPickerPressKey(t, m, "down")
+	require.Equal(t, "team/xgamma", m.Filtered()[m.Cursor()].PathWithNamespace)
+
+	// Filter "x" — xbeta, xgamma, xdelta remain; xgamma moves from index 2 to 1.
+	m = repoPickerPressKey(t, m, "x")
+	require.Len(t, m.Filtered(), 3)
+	assert.Equal(t, "team/xgamma", m.Filtered()[m.Cursor()].PathWithNamespace)
+}
+
+func TestRepoPicker_SearchClampsWhenHighlightedRepoFilteredOut(t *testing.T) {
+	m := NewRepoPickerModel("")
+	m = loadProjects(t, m)
+
+	// Highlight "other/gamma" (index 2).
+	m = repoPickerPressKey(t, m, "down")
+	m = repoPickerPressKey(t, m, "down")
+	require.Equal(t, "other/gamma", m.Filtered()[m.Cursor()].PathWithNamespace)
+
+	// Filter "team" — gamma is filtered out, cursor must clamp into bounds.
+	for _, ch := range "team" {
+		m = repoPickerPressKey(t, m, string(ch))
+	}
+	require.Len(t, m.Filtered(), 2)
+	assert.Less(t, m.Cursor(), len(m.Filtered()))
 }
 
 func TestRepoPicker_SearchBackspace(t *testing.T) {
