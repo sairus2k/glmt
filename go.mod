@@ -8,7 +8,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.3.1
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.42.0
-	gitlab.com/gitlab-org/api/client-go/v2 v2.36.3
+	gitlab.com/gitlab-org/api/client-go/v2 v2.37.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -82,5 +82,5 @@ require (
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/time v0.14.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 )
