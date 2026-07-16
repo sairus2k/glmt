@@ -269,6 +269,19 @@ func (m MRListModel) HasRunningPipelines() bool {
 	return m.hasRunningPipelines()
 }
 
+// HasRebasePendingMRs reports whether any eligible MR is in the "need_rebase"
+// state. Their displayed readiness is a point-in-time snapshot that can go
+// stale as the target branch advances (GitLab recomputes mergeability lazily),
+// so the list surfaces a re-check hint when this is true.
+func (m MRListModel) HasRebasePendingMRs() bool {
+	for _, mr := range m.eligible {
+		if mr.DetailedMergeStatus == "need_rebase" {
+			return true
+		}
+	}
+	return false
+}
+
 func (m MRListModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	total := m.totalCount()
 	key := msg.String()
@@ -738,6 +751,9 @@ func (m MRListModel) View() tea.View {
 	b.WriteString("  ")
 	b.WriteString(sSuccess.Styled(fmt.Sprintf("%d selected", m.SelectedCount())))
 	b.WriteString(sFaint.Styled(fmt.Sprintf(" / %d eligible", len(m.eligible))))
+	if m.HasRebasePendingMRs() {
+		b.WriteString(sFaint.Styled("  · rebase pending — readiness may be stale; press R"))
+	}
 	b.WriteString("\n\n")
 
 	// Compute table layout.

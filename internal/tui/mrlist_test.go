@@ -155,6 +155,16 @@ func TestMRList_Classification(t *testing.T) {
 	assert.Equal(t, "unresolved threads", reasons[45])
 }
 
+func TestMRList_HasRebasePendingMRs(t *testing.T) {
+	// A need_rebase MR among the eligible set → readiness may be stale, hint applies.
+	m := loadModel([]*gitlab.MergeRequest{eligibleMR1, needRebaseMR})
+	assert.True(t, m.HasRebasePendingMRs())
+
+	// No need_rebase eligible MR → no hint.
+	m = loadModel([]*gitlab.MergeRequest{eligibleMR1, eligibleMR2})
+	assert.False(t, m.HasRebasePendingMRs())
+}
+
 func TestMRList_CursorMovement(t *testing.T) {
 	m := loadModel(allFixtureMRs())
 
