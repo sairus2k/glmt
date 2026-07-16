@@ -82,6 +82,12 @@ func classifyMR(mr *gitlab.MergeRequest) (eligible bool, reason string) {
 	if mr.HeadPipelineStatus != "success" && mr.HeadPipelineStatus != "skipped" {
 		return false, "pipeline failed"
 	}
+	// Fast-forward projects report need_rebase even when conflicts exist, so
+	// DetailedMergeStatus alone would classify a conflicting MR as ready. The
+	// HasConflicts flag is the reliable signal.
+	if mr.HasConflicts {
+		return false, "conflicts"
+	}
 	switch mr.DetailedMergeStatus {
 	case "mergeable", "need_rebase", "not_approved":
 		// mergeable: ready; need_rebase: train handles rebase; not_approved: GitLab Free can't enforce approvals
@@ -267,19 +273,6 @@ func (m MRListModel) HasUncheckedMRs() bool {
 // HasRunningPipelines is an exported getter for app.go to query.
 func (m MRListModel) HasRunningPipelines() bool {
 	return m.hasRunningPipelines()
-}
-
-// HasRebasePendingMRs reports whether any eligible MR is in the "need_rebase"
-// state. Their displayed readiness is a point-in-time snapshot that can go
-// stale as the target branch advances (GitLab recomputes mergeability lazily),
-// so the list surfaces a re-check hint when this is true.
-func (m MRListModel) HasRebasePendingMRs() bool {
-	for _, mr := range m.eligible {
-		if mr.DetailedMergeStatus == "need_rebase" {
-			return true
-		}
-	}
-	return false
 }
 
 func (m MRListModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -751,9 +744,6 @@ func (m MRListModel) View() tea.View {
 	b.WriteString("  ")
 	b.WriteString(sSuccess.Styled(fmt.Sprintf("%d selected", m.SelectedCount())))
 	b.WriteString(sFaint.Styled(fmt.Sprintf(" / %d eligible", len(m.eligible))))
-	if m.HasRebasePendingMRs() {
-		b.WriteString(sFaint.Styled("  · rebase pending — readiness may be stale; press R"))
-	}
 	b.WriteString("\n\n")
 
 	// Compute table layout.

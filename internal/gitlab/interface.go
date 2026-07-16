@@ -27,6 +27,7 @@ type MergeRequest struct {
 	ApprovalCount               int
 	HeadPipelineStatus          string // success, failed, running, pending, canceled, skipped, created
 	DetailedMergeStatus         string // mergeable, checking, unchecked, etc.
+	HasConflicts                bool   // fast-forward projects report need_rebase even when conflicts exist, so this is the reliable conflict signal
 	BlockingDiscussionsResolved bool
 	WebURL                      string
 }

@@ -155,14 +155,31 @@ func TestMRList_Classification(t *testing.T) {
 	assert.Equal(t, "unresolved threads", reasons[45])
 }
 
-func TestMRList_HasRebasePendingMRs(t *testing.T) {
-	// A need_rebase MR among the eligible set → readiness may be stale, hint applies.
-	m := loadModel([]*gitlab.MergeRequest{eligibleMR1, needRebaseMR})
-	assert.True(t, m.HasRebasePendingMRs())
+func TestMRList_ConflictNeedRebase(t *testing.T) {
+	// Fast-forward projects report need_rebase even when conflicts exist, so
+	// a conflicting MR must be caught by HasConflicts, not shown as ready.
+	// Reproduces MR 3038 (detailed_merge_status=need_rebase, has_conflicts=true).
+	conflicting := &gitlab.MergeRequest{
+		IID: 3038, Title: "Conflicting MR", Author: "carol",
+		HeadPipelineStatus: "success", DetailedMergeStatus: "need_rebase",
+		HasConflicts: true, BlockingDiscussionsResolved: true,
+	}
+	m := loadModel([]*gitlab.MergeRequest{eligibleMR1, conflicting, needRebaseMR})
 
-	// No need_rebase eligible MR → no hint.
-	m = loadModel([]*gitlab.MergeRequest{eligibleMR1, eligibleMR2})
-	assert.False(t, m.HasRebasePendingMRs())
+	// need_rebase WITHOUT conflicts stays eligible; the conflicting one does not.
+	eligibleIIDs := map[int]bool{}
+	for _, mr := range m.Eligible() {
+		eligibleIIDs[mr.IID] = true
+	}
+	assert.True(t, eligibleIIDs[42])    // eligibleMR1 (mergeable)
+	assert.True(t, eligibleIIDs[46])    // needRebaseMR, no conflicts
+	assert.False(t, eligibleIIDs[3038]) // conflicting need_rebase
+
+	reasons := map[int]string{}
+	for _, imr := range m.Ineligible() {
+		reasons[imr.MR.IID] = imr.Reason
+	}
+	assert.Equal(t, "conflicts", reasons[3038])
 }
 
 func TestMRList_CursorMovement(t *testing.T) {

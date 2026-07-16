@@ -383,6 +383,7 @@ func TestListMergeRequestsFull(t *testing.T) {
 								"createdAt": "2025-01-15T10:00:00Z",
 								"headPipeline": {"status": "SUCCESS"},
 								"detailedMergeStatus": "MERGEABLE",
+								"conflicts": false,
 								"webUrl": "https://gitlab.com/mr/10"
 							},
 							{
@@ -396,7 +397,8 @@ func TestListMergeRequestsFull(t *testing.T) {
 								"diffHeadSha": "def456",
 								"createdAt": "2025-01-16T12:00:00Z",
 								"headPipeline": null,
-								"detailedMergeStatus": "CHECKING",
+								"detailedMergeStatus": "NEED_REBASE",
+								"conflicts": true,
 								"webUrl": "https://gitlab.com/mr/11"
 							}
 						]
@@ -423,6 +425,7 @@ func TestListMergeRequestsFull(t *testing.T) {
 	assert.False(t, mrs[0].Draft)
 	assert.Equal(t, "success", mrs[0].HeadPipelineStatus)    // lowercased
 	assert.Equal(t, "mergeable", mrs[0].DetailedMergeStatus) // lowercased
+	assert.False(t, mrs[0].HasConflicts)                     // conflicts: false
 	assert.True(t, mrs[0].BlockingDiscussionsResolved)       // default true
 	assert.Equal(t, "https://gitlab.com/mr/10", mrs[0].WebURL)
 
@@ -431,7 +434,8 @@ func TestListMergeRequestsFull(t *testing.T) {
 	assert.True(t, mrs[1].Draft)
 	assert.Equal(t, 1, mrs[1].CommitCount)
 	assert.Empty(t, mrs[1].HeadPipelineStatus) // null pipeline
-	assert.Equal(t, "checking", mrs[1].DetailedMergeStatus)
+	assert.Equal(t, "need_rebase", mrs[1].DetailedMergeStatus)
+	assert.True(t, mrs[1].HasConflicts) // conflicts: true even with need_rebase
 }
 
 func TestListMergeRequestsFull_Pagination(t *testing.T) {

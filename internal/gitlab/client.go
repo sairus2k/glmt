@@ -272,6 +272,7 @@ type graphQLNode struct {
 	ApprovedBy          graphQLApprovedBy    `json:"approvedBy"`
 	HeadPipeline        *graphQLHeadPipeline `json:"headPipeline"`
 	DetailedMergeStatus string               `json:"detailedMergeStatus"`
+	Conflicts           bool                 `json:"conflicts"`
 	WebURL              string               `json:"webUrl"`
 }
 
@@ -329,6 +330,7 @@ func convertGraphQLNode(n graphQLNode) *MergeRequest {
 		SHA:                         n.DiffHeadSha,
 		CreatedAt:                   n.CreatedAt,
 		DetailedMergeStatus:         strings.ToLower(n.DetailedMergeStatus),
+		HasConflicts:                n.Conflicts,
 		BlockingDiscussionsResolved: true, // not available in GraphQL; safe default
 		WebURL:                      n.WebURL,
 	}
@@ -355,6 +357,7 @@ func (c *APIClient) ListMergeRequestsFull(ctx context.Context, projectPath strin
 					approvedBy { nodes { username } }
 					headPipeline { status }
 					detailedMergeStatus
+					conflicts
 					webUrl
 				}
 			}
