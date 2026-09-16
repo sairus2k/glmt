@@ -28,6 +28,7 @@ brews:
     license: "MIT"
 
 release:
+  replace_existing_artifacts: true
   github:
     owner: sairus2k
     name: glmt
