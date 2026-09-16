@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	goGitLab "gitlab.com/gitlab-org/api/client-go/v2"
+	goGitLab "gitlab.com/gitlab-org/api/client-go/v3"
 )
 
 const mergingMRFmt = "merging MR %d: %w"
@@ -69,12 +69,12 @@ func (c *APIClient) GetCurrentUser(ctx context.Context) (*User, error) {
 // ListProjects returns projects accessible to the current user.
 func (c *APIClient) ListProjects(ctx context.Context, search string) ([]*Project, error) {
 	opts := &goGitLab.ListProjectsOptions{
-		Membership: goGitLab.Ptr(true),
-		OrderBy:    goGitLab.Ptr("name"),
-		Sort:       goGitLab.Ptr("asc"),
+		Membership: new(true),
+		OrderBy:    new("name"),
+		Sort:       new("asc"),
 	}
 	if search != "" {
-		opts.Search = goGitLab.Ptr(search)
+		opts.Search = new(search)
 	}
 
 	projects, _, err := c.client.Projects.ListProjects(opts, goGitLab.WithContext(ctx))
@@ -111,7 +111,7 @@ func (c *APIClient) GetMergeRequest(ctx context.Context, projectID, mrIID int) (
 
 // RebaseMergeRequest triggers a rebase of the MR onto its target branch.
 func (c *APIClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int) (*MergeRequest, error) {
-	opts := &goGitLab.RebaseMergeRequestOptions{SkipCI: goGitLab.Ptr(true)}
+	opts := &goGitLab.RebaseMergeRequestOptions{SkipCI: new(true)}
 	_, err := c.client.MergeRequests.RebaseMergeRequest(int64(projectID), int64(mrIID), opts, goGitLab.WithContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("triggering rebase for MR %d: %w", mrIID, err)
@@ -126,7 +126,7 @@ func (c *APIClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int
 		}
 
 		opts := &goGitLab.GetMergeRequestsOptions{
-			IncludeRebaseInProgress: goGitLab.Ptr(true),
+			IncludeRebaseInProgress: new(true),
 		}
 		mr, _, err := c.client.MergeRequests.GetMergeRequest(int64(projectID), int64(mrIID), opts, goGitLab.WithContext(ctx))
 		if err != nil {
@@ -147,7 +147,7 @@ func (c *APIClient) RebaseMergeRequest(ctx context.Context, projectID, mrIID int
 // Returns the merge commit SHA on success.
 func (c *APIClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) (string, error) {
 	opts := &goGitLab.AcceptMergeRequestOptions{
-		SHA: goGitLab.Ptr(sha),
+		SHA: new(sha),
 	}
 
 	mr, _, err := c.client.MergeRequests.AcceptMergeRequest(int64(projectID), int64(mrIID), opts, goGitLab.WithContext(ctx))
@@ -192,16 +192,16 @@ func (c *APIClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrII
 func (c *APIClient) ListPipelines(ctx context.Context, projectID int, ref, status, sha string) ([]*Pipeline, error) {
 	opts := &goGitLab.ListProjectPipelinesOptions{
 		ListOptions: goGitLab.ListOptions{PerPage: 1},
-		Ref:         goGitLab.Ptr(ref),
-		OrderBy:     goGitLab.Ptr("id"),
-		Sort:        goGitLab.Ptr("desc"),
+		Ref:         new(ref),
+		OrderBy:     new("id"),
+		Sort:        new("desc"),
 	}
 	if status != "" {
 		pipelineStatus := goGitLab.BuildStateValue(status)
 		opts.Status = &pipelineStatus
 	}
 	if sha != "" {
-		opts.SHA = goGitLab.Ptr(sha)
+		opts.SHA = new(sha)
 	}
 
 	pipelines, _, err := c.client.Pipelines.ListProjectPipelines(projectID, opts, goGitLab.WithContext(ctx))
