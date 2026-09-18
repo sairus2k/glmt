@@ -8,7 +8,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go v0.44.0
-	gitlab.com/gitlab-org/api/client-go/v3 v3.11.0
+	gitlab.com/gitlab-org/api/client-go/v3 v3.12.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
