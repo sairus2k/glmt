@@ -109,7 +109,9 @@ func createRootToken(t *testing.T, gitlabURL string) string {
 	patData := map[string]interface{}{
 		"name":       "glmt-e2e-test",
 		"scopes":     []string{"api"},
-		"expires_at": time.Now().Add(24 * time.Hour).Format("2006-01-02"),
+		// expires_at is a date and the token dies at 00:00 UTC of that day,
+		// so +24h can expire mid-run when the suite crosses midnight UTC.
+		"expires_at": time.Now().UTC().Add(48 * time.Hour).Format("2006-01-02"),
 	}
 	patJSON, _ := json.Marshal(patData)
 
