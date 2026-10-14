@@ -159,4 +159,8 @@ statusesDone:
 		require.NoError(t, err, "GetMergeRequest for !%d", iid)
 		assert.Equal(t, "merged", mr.State, "MR !%d should be in merged state", iid)
 	}
+
+	t.Run("stacked MRs", func(t *testing.T) {
+		testStackedMRs(t, env)
+	})
 }

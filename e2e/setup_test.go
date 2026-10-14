@@ -30,6 +30,7 @@ type testEnv struct {
 	token     string
 	projectID int
 	repoPath  string
+	cloneDir  string
 	mrIIDs    []int
 	cleanup   func()
 }
@@ -454,6 +455,7 @@ func setupGitLabN(t *testing.T, n int) *testEnv {
 		token:     token,
 		projectID: projectID,
 		repoPath:  "root/glmt-e2e-test",
+		cloneDir:  cloneDir,
 		mrIIDs:    mrIIDs,
 		cleanup: func() {
 			_ = runnerContainer.Terminate(ctx)
@@ -471,36 +473,39 @@ func createTestMRsN(t *testing.T, gitlabURL, token string, projectID, n int) []i
 	for i := 0; i < n; i++ {
 		branchName := fmt.Sprintf("feature-%c", 'a'+i)
 		mrTitle := fmt.Sprintf("Add feature %c", 'A'+i)
-
-		mrData := map[string]interface{}{
-			"source_branch": branchName,
-			"target_branch": "main",
-			"title":         mrTitle,
-		}
-		mrBody, _ := json.Marshal(mrData)
-		mrReq, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v4/projects/%d/merge_requests", gitlabURL, projectID), bytes.NewReader(mrBody))
-		mrReq.Header.Set("Content-Type", "application/json")
-		mrReq.Header.Set("PRIVATE-TOKEN", token)
-		mrResp := apiDo(t, mrReq)
-
-		if mrResp.StatusCode != 201 {
-			respBody, _ := io.ReadAll(mrResp.Body)
-			_ = mrResp.Body.Close()
-			t.Fatalf("MR creation failed for %s with status %d: %s", branchName, mrResp.StatusCode, string(respBody))
-		}
-
-		var mr struct {
-			IID int `json:"iid"`
-		}
-		if err := json.NewDecoder(mrResp.Body).Decode(&mr); err != nil {
-			_ = mrResp.Body.Close()
-			t.Fatalf("Failed to decode MR response: %v", err)
-		}
-		_ = mrResp.Body.Close()
-		mrIIDs = append(mrIIDs, mr.IID)
+		mrIIDs = append(mrIIDs, createMR(t, gitlabURL, token, projectID, branchName, "main", mrTitle))
 	}
 
 	return mrIIDs
+}
+
+func createMR(t *testing.T, gitlabURL, token string, projectID int, sourceBranch, targetBranch, title string) int {
+	t.Helper()
+
+	mrData := map[string]interface{}{
+		"source_branch": sourceBranch,
+		"target_branch": targetBranch,
+		"title":         title,
+	}
+	mrBody, _ := json.Marshal(mrData)
+	mrReq, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v4/projects/%d/merge_requests", gitlabURL, projectID), bytes.NewReader(mrBody))
+	mrReq.Header.Set("Content-Type", "application/json")
+	mrReq.Header.Set("PRIVATE-TOKEN", token)
+	mrResp := apiDo(t, mrReq)
+	defer func() { _ = mrResp.Body.Close() }()
+
+	if mrResp.StatusCode != 201 {
+		respBody, _ := io.ReadAll(mrResp.Body)
+		t.Fatalf("MR creation failed for %s with status %d: %s", sourceBranch, mrResp.StatusCode, string(respBody))
+	}
+
+	var mr struct {
+		IID int `json:"iid"`
+	}
+	if err := json.NewDecoder(mrResp.Body).Decode(&mr); err != nil {
+		t.Fatalf("Failed to decode MR response: %v", err)
+	}
+	return mr.IID
 }
 
 func waitForMRPipelines(t *testing.T, gitlabURL, token string, projectID int, mrIIDs []int) {
