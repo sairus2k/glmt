@@ -83,6 +83,9 @@ type Client interface {
 	// Returns the merge commit SHA on success.
 	MergeMergeRequest(ctx context.Context, projectID, mrIID int, sha string) (string, error)
 
+	// UpdateMergeRequestTargetBranch changes the MR's target branch.
+	UpdateMergeRequestTargetBranch(ctx context.Context, projectID, mrIID int, targetBranch string) error
+
 	// GetMergeRequestPipeline returns the head pipeline for a merge request,
 	// along with the MR's DetailedMergeStatus.
 	GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*Pipeline, string, error)

@@ -1090,3 +1090,103 @@ func TestRunnerContextCancelledMidTrain(t *testing.T) {
 	listCalls := mock.CallsTo("ListPipelines")
 	assert.Empty(t, listCalls, "should not wait for main pipeline after cancellation")
 }
+
+func makeStackedMR(iid int, sourceBranch, targetBranch string) *gitlab.MergeRequest {
+	mr := makeMR(iid, fmt.Sprintf("MR %d", iid))
+	mr.SourceBranch = sourceBranch
+	mr.TargetBranch = targetBranch
+	return mr
+}
+
+func TestRunnerStackedMRs(t *testing.T) {
+	stack := func() []*gitlab.MergeRequest {
+		return []*gitlab.MergeRequest{
+			makeStackedMR(1, "feature-a", "main"),
+			makeStackedMR(2, "feature-b", "feature-a"),
+			makeStackedMR(3, "feature-c", "feature-b"),
+		}
+	}
+
+	tests := []struct {
+		name         string
+		setup        func(m *MockClient)
+		wantStatuses []MRStatus
+		wantReasons  []string
+		wantCalls    []string
+	}{
+		{
+			name:         "dependent MRs are retargeted to the train target before rebase",
+			wantStatuses: []MRStatus{MRStatusMerged, MRStatusMerged, MRStatusMerged},
+			wantReasons:  []string{"", "", ""},
+			wantCalls: []string{
+				"RebaseMergeRequest 1", "MergeMergeRequest 1",
+				"UpdateMergeRequestTargetBranch 2 main", "RebaseMergeRequest 2", "MergeMergeRequest 2",
+				"UpdateMergeRequestTargetBranch 3 main", "RebaseMergeRequest 3", "MergeMergeRequest 3",
+			},
+		},
+		{
+			name: "skipped base skips the whole stack above it",
+			setup: func(m *MockClient) {
+				m.RebaseMergeRequestFn = func(_ context.Context, _ int, mrIID int) (*gitlab.MergeRequest, error) {
+					return nil, fmt.Errorf("rebase conflict for MR %d", mrIID)
+				}
+			},
+			wantStatuses: []MRStatus{MRStatusSkipped, MRStatusSkipped, MRStatusSkipped},
+			wantReasons: []string{
+				"rebase conflict: rebase conflict for MR 1",
+				"base branch feature-a was not merged",
+				"base branch feature-b was not merged",
+			},
+			wantCalls: []string{"RebaseMergeRequest 1"},
+		},
+		{
+			name: "failed retarget skips the MR and the stack above it",
+			setup: func(m *MockClient) {
+				m.UpdateMergeRequestTargetBranchFn = func(_ context.Context, _ int, _ int, _ string) error {
+					return fmt.Errorf("403 Forbidden")
+				}
+			},
+			wantStatuses: []MRStatus{MRStatusMerged, MRStatusSkipped, MRStatusSkipped},
+			wantReasons: []string{
+				"",
+				"retarget to main failed: 403 Forbidden",
+				"base branch feature-b was not merged",
+			},
+			wantCalls: []string{
+				"RebaseMergeRequest 1", "MergeMergeRequest 1",
+				"UpdateMergeRequestTargetBranch 2 main",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockClient{}
+			if tt.setup != nil {
+				tt.setup(mock)
+			}
+			r := newTestRunner(mock)
+			r.MaxMainPipelineAttempts = 1
+
+			result, err := r.Run(context.Background(), stack())
+			require.NoError(t, err)
+
+			require.Len(t, result.MRResults, len(tt.wantStatuses))
+			for i, res := range result.MRResults {
+				assert.Equal(t, tt.wantStatuses[i], res.Status, "MR %d status", res.MR.IID)
+				assert.Equal(t, tt.wantReasons[i], res.SkipReason, "MR %d skip reason", res.MR.IID)
+			}
+
+			var calls []string
+			for _, c := range mock.Calls {
+				switch c.Method {
+				case "RebaseMergeRequest", "MergeMergeRequest":
+					calls = append(calls, fmt.Sprintf("%s %d", c.Method, c.Args[1]))
+				case "UpdateMergeRequestTargetBranch":
+					calls = append(calls, fmt.Sprintf("%s %d %s", c.Method, c.Args[1], c.Args[2]))
+				}
+			}
+			assert.Equal(t, tt.wantCalls, calls)
+		})
+	}
+}

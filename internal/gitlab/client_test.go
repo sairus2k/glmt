@@ -203,6 +203,40 @@ func TestMergeMergeRequest_NotMergeable422(t *testing.T) {
 	assert.Empty(t, mergeCommitSHA)
 }
 
+func TestUpdateMergeRequestTargetBranch_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPut, r.Method)
+		assert.Equal(t, "/api/v4/projects/1/merge_requests/10", r.URL.Path)
+
+		var body map[string]any
+		err := json.NewDecoder(r.Body).Decode(&body)
+		assert.NoError(t, err) //nolint:testifylint // require not safe in http handler goroutine
+		assert.Equal(t, map[string]any{"target_branch": "main"}, body)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"iid": 10, "target_branch": "main"}`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	err := client.UpdateMergeRequestTargetBranch(context.Background(), 1, 10, "main")
+	require.NoError(t, err)
+}
+
+func TestUpdateMergeRequestTargetBranch_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = fmt.Fprint(w, `{"message": "403 Forbidden"}`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	err := client.UpdateMergeRequestTargetBranch(context.Background(), 1, 10, "main")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "updating target branch of MR 10")
+}
+
 func TestGetMergeRequestPipeline(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)

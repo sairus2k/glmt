@@ -161,6 +161,10 @@ func (c *Client) MergeMergeRequest(_ context.Context, _ int, _ int, _ string) (s
 	return fmt.Sprintf("merge-commit-%x", time.Now().UnixNano()&0xffffff), nil
 }
 
+func (c *Client) UpdateMergeRequestTargetBranch(_ context.Context, _ int, _ int, _ string) error {
+	return nil
+}
+
 func (c *Client) GetMergeRequestPipeline(_ context.Context, _ int, mrIID int) (*gitlab.Pipeline, string, error) {
 	return &gitlab.Pipeline{
 		ID:     mrIID*10 + 1,

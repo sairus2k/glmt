@@ -76,19 +76,26 @@ func (r *Runner) Run(ctx context.Context, mrs []*gitlab.MergeRequest) (*Result, 
 	var lastMergeCommitSHA string
 	anyMerged := false
 	targetBranch := mrs[0].TargetBranch
+	// Source branches of processed MRs, to detect MRs stacked on them.
+	mergedBranches := make(map[string]bool)
+	skippedBranches := make(map[string]bool)
 
 	for i, mr := range mrs {
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
 
-		status, skipReason, mergeCommitSHA := r.processMR(ctx, mr)
+		status, skipReason, mergeCommitSHA := r.processStackedMR(ctx, mr, targetBranch, mergedBranches, skippedBranches)
 		result.MRResults[i].Status = status
 		result.MRResults[i].SkipReason = skipReason
 
-		if status == MRStatusMerged {
+		switch status {
+		case MRStatusMerged:
 			anyMerged = true
 			lastMergeCommitSHA = mergeCommitSHA
+			mergedBranches[mr.SourceBranch] = true
+		case MRStatusSkipped:
+			skippedBranches[mr.SourceBranch] = true
 		}
 
 		// Check context after processing
@@ -114,6 +121,28 @@ func (r *Runner) Run(ctx context.Context, mrs []*gitlab.MergeRequest) (*Result, 
 	}
 
 	return result, nil
+}
+
+// processStackedMR points an MR stacked on an already merged MR at the train's target branch
+// before processing it. GitLab retargets such MRs itself only when the base MR's source branch
+// is deleted on merge, and does it asynchronously, so the rebase would race with it.
+// Without the retarget the MR is rebased onto and merged into the stale base branch.
+func (r *Runner) processStackedMR(ctx context.Context, mr *gitlab.MergeRequest, targetBranch string, mergedBranches, skippedBranches map[string]bool) (MRStatus, string, string) {
+	if skippedBranches[mr.TargetBranch] {
+		r.log(mr.IID, "skip", fmt.Sprintf("Base branch %s was not merged", mr.TargetBranch))
+		return MRStatusSkipped, fmt.Sprintf("base branch %s was not merged", mr.TargetBranch), ""
+	}
+	if mergedBranches[mr.TargetBranch] {
+		if err := r.client.UpdateMergeRequestTargetBranch(ctx, r.projectID, mr.IID, targetBranch); err != nil {
+			if ctx.Err() != nil {
+				return MRStatusPending, "", ""
+			}
+			r.log(mr.IID, "skip", fmt.Sprintf("Retarget to %s failed: %v", targetBranch, err))
+			return MRStatusSkipped, fmt.Sprintf("retarget to %s failed: %v", targetBranch, err), ""
+		}
+		r.log(mr.IID, "retarget", targetBranch)
+	}
+	return r.processMR(ctx, mr)
 }
 
 func (r *Runner) processMR(ctx context.Context, mr *gitlab.MergeRequest) (MRStatus, string, string) {
