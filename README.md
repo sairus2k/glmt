@@ -90,6 +90,11 @@ For each selected MR, in order:
 
 Skipped MRs do not abort the train. Already-merged MRs are never rolled back.
 
+**Stacked MRs** (an MR targeting the branch of another MR in the train) are
+retargeted to the train's target branch once their base MR merges, before the
+rebase. If the base MR is skipped, the MRs stacked on it are skipped too.
+Select the base MR before the MRs stacked on it.
+
 > **Tip:** To avoid wasting CI on intermediate main-branch commits, set
 > `interruptible: true` on your CI jobs and enable **Auto-cancel redundant
 > pipelines** in your GitLab project settings (CI/CD → General pipelines).
