@@ -41,6 +41,7 @@ type MRStepLog struct {
 // It shows live progress of the merge train execution.
 type TrainRunModel struct {
 	mrs               []*gitlab.MergeRequest
+	retargets         map[int]string // MR IID → target branch set by the runner
 	mrSteps           []MRStepLog
 	mainPipelineSteps []StepEntry
 	logEntries        []StepEntry
@@ -79,6 +80,7 @@ func NewTrainRunModel(mrs []*gitlab.MergeRequest) TrainRunModel {
 	}
 	return TrainRunModel{
 		mrs:        mrs,
+		retargets:  make(map[int]string),
 		mrSteps:    mrSteps,
 		currentMR:  0,
 		startTime:  time.Now(),
@@ -206,6 +208,13 @@ func (m TrainRunModel) handleStep(msg trainStepMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if msg.step == "retarget" {
+		m.retargets[msg.mrIID] = msg.message
+	}
+	if branch, ok := m.retargets[msg.mrIID]; ok {
+		targetBranch = branch
+	}
+
 	// Use first MR's target branch for main pipeline steps
 	if targetBranch == "" && len(m.mrs) > 0 {
 		targetBranch = m.mrs[0].TargetBranch
@@ -304,6 +313,8 @@ func (m *TrainRunModel) updateLastStepEntry(entry StepEntry, mrIdx int) {
 // mapStepName converts internal step identifiers to display names.
 func mapStepName(step, targetBranch, message string) string {
 	switch step {
+	case "retarget":
+		return fmt.Sprintf("Retarget to %s", message)
 	case "rebase", "rebase_wait":
 		return fmt.Sprintf("Rebase onto %s", targetBranch)
 	case "pipeline_wait":
@@ -338,7 +349,7 @@ func mapStepStatus(step string) StepStatus {
 	switch step {
 	case "pipeline_wait", "main_pipeline_wait", "rebase_wait", "merge_wait", "merge_attempt":
 		return StepRunning
-	case "rebase", "pipeline_success", "pipeline_skip", "merge", "main_pipeline_done":
+	case "retarget", "rebase", "pipeline_success", "pipeline_skip", "merge", "main_pipeline_done":
 		return StepDone
 	case "pipeline_failed":
 		return StepFailed

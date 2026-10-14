@@ -784,3 +784,23 @@ func TestTrainRun_KeyHintsIncludeOpenOnlyWhenURLPresent(t *testing.T) {
 	}
 	assert.True(t, found, "[o] hint must appear once a main pipeline URL is known")
 }
+
+func TestTrainRun_RetargetedMRRebasesOntoNewTarget(t *testing.T) {
+	base := &gitlab.MergeRequest{IID: 1, SourceBranch: "feature-a", TargetBranch: "main"}
+	stacked := &gitlab.MergeRequest{IID: 2, SourceBranch: "feature-b", TargetBranch: "feature-a"}
+	m := NewTrainRunModel([]*gitlab.MergeRequest{base, stacked})
+
+	for _, msg := range []trainStepMsg{
+		{mrIID: 2, step: "retarget", message: "main"},
+		{mrIID: 2, step: "rebase_wait", message: "Rebasing merge request..."},
+	} {
+		result, _ := m.Update(msg)
+		m = result.(TrainRunModel)
+	}
+
+	steps := m.MRSteps()[1].Steps
+	require.Len(t, steps, 2)
+	assert.Equal(t, "Retarget to main", steps[0].Name)
+	assert.Equal(t, StepDone, steps[0].Status)
+	assert.Equal(t, "Rebase onto main", steps[1].Name)
+}
