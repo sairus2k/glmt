@@ -18,14 +18,15 @@ import (
 type mockClient struct {
 	calls []string
 
-	GetCurrentUserFn          func(context.Context) (*gitlab.User, error)
-	ListProjectsFn            func(context.Context, string) ([]*gitlab.Project, error)
-	ListMergeRequestsFullFn   func(context.Context, string) ([]*gitlab.MergeRequest, error)
-	GetMergeRequestFn         func(context.Context, int, int) (*gitlab.MergeRequest, error)
-	RebaseMergeRequestFn      func(context.Context, int, int) (*gitlab.MergeRequest, error)
-	MergeMergeRequestFn       func(context.Context, int, int, string) (string, error)
-	GetMergeRequestPipelineFn func(context.Context, int, int) (*gitlab.Pipeline, string, error)
-	ListPipelinesFn           func(context.Context, int, string, string, string) ([]*gitlab.Pipeline, error)
+	GetCurrentUserFn                 func(context.Context) (*gitlab.User, error)
+	ListProjectsFn                   func(context.Context, string) ([]*gitlab.Project, error)
+	ListMergeRequestsFullFn          func(context.Context, string) ([]*gitlab.MergeRequest, error)
+	GetMergeRequestFn                func(context.Context, int, int) (*gitlab.MergeRequest, error)
+	RebaseMergeRequestFn             func(context.Context, int, int) (*gitlab.MergeRequest, error)
+	MergeMergeRequestFn              func(context.Context, int, int, string) (string, error)
+	UpdateMergeRequestTargetBranchFn func(context.Context, int, int, string) error
+	GetMergeRequestPipelineFn        func(context.Context, int, int) (*gitlab.Pipeline, string, error)
+	ListPipelinesFn                  func(context.Context, int, string, string, string) ([]*gitlab.Pipeline, error)
 }
 
 func (m *mockClient) called(method string) bool {
@@ -78,6 +79,14 @@ func (m *mockClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int
 		return m.MergeMergeRequestFn(ctx, projectID, mrIID, sha)
 	}
 	return "abc123", nil
+}
+
+func (m *mockClient) UpdateMergeRequestTargetBranch(ctx context.Context, projectID, mrIID int, targetBranch string) error {
+	m.calls = append(m.calls, "UpdateMergeRequestTargetBranch")
+	if m.UpdateMergeRequestTargetBranchFn != nil {
+		return m.UpdateMergeRequestTargetBranchFn(ctx, projectID, mrIID, targetBranch)
+	}
+	return nil
 }
 
 func (m *mockClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, string, error) {
@@ -180,6 +189,13 @@ func TestLoggingClient_AllMethods(t *testing.T) {
 				_, _ = lc.MergeMergeRequest(context.Background(), 10, 5, "secret-sha")
 			},
 			expectedArgs: map[string]any{"project_id": float64(10), "mr_iid": float64(5)},
+		},
+		{
+			name: "UpdateMergeRequestTargetBranch",
+			call: func(lc *LoggingClient) {
+				_ = lc.UpdateMergeRequestTargetBranch(context.Background(), 10, 5, "main")
+			},
+			expectedArgs: map[string]any{"project_id": float64(10), "mr_iid": float64(5), "target_branch": "main"},
 		},
 		{
 			name: "GetMergeRequestPipeline",

@@ -67,6 +67,13 @@ func (c *LoggingClient) MergeMergeRequest(ctx context.Context, projectID, mrIID 
 	return mergeCommitSHA, err
 }
 
+func (c *LoggingClient) UpdateMergeRequestTargetBranch(ctx context.Context, projectID, mrIID int, targetBranch string) error {
+	start := time.Now()
+	err := c.inner.UpdateMergeRequestTargetBranch(ctx, projectID, mrIID, targetBranch)
+	c.logCall("UpdateMergeRequestTargetBranch", map[string]any{"project_id": projectID, "mr_iid": mrIID, "target_branch": targetBranch}, err, start)
+	return err
+}
+
 func (c *LoggingClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*gitlab.Pipeline, string, error) {
 	start := time.Now()
 	p, status, err := c.inner.GetMergeRequestPipeline(ctx, projectID, mrIID)

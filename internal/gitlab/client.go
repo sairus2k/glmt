@@ -166,6 +166,16 @@ func (c *APIClient) MergeMergeRequest(ctx context.Context, projectID, mrIID int,
 	return mr.MergeCommitSHA, nil
 }
 
+// UpdateMergeRequestTargetBranch changes the MR's target branch.
+func (c *APIClient) UpdateMergeRequestTargetBranch(ctx context.Context, projectID, mrIID int, targetBranch string) error {
+	opts := &goGitLab.UpdateMergeRequestOptions{TargetBranch: new(targetBranch)}
+	_, _, err := c.client.MergeRequests.UpdateMergeRequest(int64(projectID), int64(mrIID), opts, goGitLab.WithContext(ctx))
+	if err != nil {
+		return fmt.Errorf("updating target branch of MR %d: %w", mrIID, err)
+	}
+	return nil
+}
+
 // GetMergeRequestPipeline returns the head pipeline for a merge request,
 // along with the MR's DetailedMergeStatus.
 func (c *APIClient) GetMergeRequestPipeline(ctx context.Context, projectID, mrIID int) (*Pipeline, string, error) {
