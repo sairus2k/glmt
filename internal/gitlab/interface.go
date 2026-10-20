@@ -92,5 +92,7 @@ type Client interface {
 
 	// ListPipelines returns pipelines for a ref, ordered by ID descending.
 	// If sha is non-empty, only pipelines for that exact commit SHA are returned.
+	// Only push pipelines are returned: scheduled or manually run pipelines on the same
+	// SHA would otherwise shadow the pipeline created by the merge.
 	ListPipelines(ctx context.Context, projectID int, ref, status, sha string) ([]*Pipeline, error)
 }

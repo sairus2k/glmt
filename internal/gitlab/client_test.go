@@ -342,6 +342,27 @@ func TestListPipelines_WithSHAFilter(t *testing.T) {
 	assert.Equal(t, "abc123", pipelines[0].SHA)
 }
 
+func TestListPipelines_OnlyPushPipelines(t *testing.T) {
+	// A pipeline schedule on the target branch runs on the same SHA and finishes
+	// long before the merge pipeline; it must not be mistaken for it.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("source") != "push" {
+			_, _ = fmt.Fprint(w, `[{"id": 23587, "status": "success", "source": "schedule", "ref": "dev", "sha": "29c8e53", "web_url": "https://gitlab.com/pipeline/23587"}]`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `[{"id": 23586, "status": "running", "source": "push", "ref": "dev", "sha": "29c8e53", "web_url": "https://gitlab.com/pipeline/23586"}]`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	pipelines, err := client.ListPipelines(context.Background(), 1, "dev", "", "29c8e53")
+	require.NoError(t, err)
+	require.Len(t, pipelines, 1)
+	assert.Equal(t, 23586, pipelines[0].ID)
+	assert.Equal(t, "running", pipelines[0].Status)
+}
+
 func TestListPipelines_WithStatusFilter(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "main", r.URL.Query().Get("ref"))
