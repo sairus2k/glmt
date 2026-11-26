@@ -3,8 +3,8 @@ module github.com/sairus2k/glmt
 go 1.26.1
 
 require (
-	charm.land/bubbletea/v2 v2.1.3
-	github.com/charmbracelet/x/ansi v0.11.10
+	charm.land/bubbletea/v2 v2.2.0
+	github.com/charmbracelet/x/ansi v0.12.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go v0.45.0
